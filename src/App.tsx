@@ -7,6 +7,8 @@ import { ProfileView } from './components/Profile/ProfileView';
 import { WalletView } from './components/Wallet/WalletView';
 import { ServiceList } from './components/Services/ServiceList';
 import { BookingList } from './components/Bookings/BookingList';
+import { SOSButton } from './components/SOS/SOSButton';
+import { useGeolocation } from './hooks/useGeolocation';
 import {
   LayoutDashboard,
   User,
@@ -23,6 +25,7 @@ function AppContent() {
   const { user, loading, logout } = useAuth();
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [currentView, setCurrentView] = useState<View>('dashboard');
+  const { location: userLocation } = useGeolocation();
 
   if (loading) {
     return (
@@ -152,6 +155,9 @@ function AppContent() {
           </div>
         </div>
       </footer>
+
+      {/* SOS Button - Always visible when logged in */}
+      <SOSButton userLocation={userLocation} />
     </div>
   );
 }

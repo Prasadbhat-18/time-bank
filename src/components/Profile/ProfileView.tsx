@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { User, Star, Mail, Calendar, CreditCard as Edit2, Plus, X } from 'lucide-react';
+import { User, Star, Mail, Calendar, CreditCard as Edit2, Plus, X, Phone, Shield } from 'lucide-react';
 import { UserSkill, Skill } from '../../types';
 import { dataService } from '../../services/dataService';
+import { EmergencyContactsManager } from '../SOS/EmergencyContacts';
 
 export const ProfileView: React.FC = () => {
   const { user, updateUser } = useAuth();
@@ -15,6 +16,7 @@ export const ProfileView: React.FC = () => {
   const [selectedSkillId, setSelectedSkillId] = useState('');
   const [skillType, setSkillType] = useState<'offered' | 'needed'>('offered');
   const [proficiency, setProficiency] = useState('intermediate');
+  const [activeTab, setActiveTab] = useState<'profile' | 'emergency'>('profile');
 
   useEffect(() => {
     if (user) {
@@ -144,7 +146,41 @@ export const ProfileView: React.FC = () => {
             </div>
           )}
 
-          <div className="grid md:grid-cols-2 gap-6">
+          {/* Tab Navigation */}
+          <div className="border-b border-gray-200 mb-6">
+            <nav className="-mb-px flex gap-8">
+              <button
+                onClick={() => setActiveTab('profile')}
+                className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === 'profile'
+                    ? 'border-emerald-500 text-emerald-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <User className="w-4 h-4" />
+                  Profile & Skills
+                </div>
+              </button>
+              <button
+                onClick={() => setActiveTab('emergency')}
+                className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === 'emergency'
+                    ? 'border-red-500 text-red-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Shield className="w-4 h-4" />
+                  Emergency Contacts
+                </div>
+              </button>
+            </nav>
+          </div>
+
+          {/* Tab Content */}
+          {activeTab === 'profile' && (
+            <div className="grid md:grid-cols-2 gap-6">
             <div>
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-lg font-semibold text-gray-800">Skills I Offer</h2>
@@ -276,6 +312,14 @@ export const ProfileView: React.FC = () => {
           </div>
         </div>
       )}
+            </div>
+          )}
+
+          {activeTab === 'emergency' && (
+            <EmergencyContactsManager />
+          )}
+        </div>
+      </div>
     </div>
   );
 };
