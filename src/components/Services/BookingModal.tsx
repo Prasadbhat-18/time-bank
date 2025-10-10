@@ -39,8 +39,8 @@ export const BookingModal: React.FC<BookingModalProps> = ({ service, onClose, on
       });
 
       onBooked();
-    } catch (err) {
-      setError('Failed to create booking. Please try again.');
+    } catch (err: any) {
+      setError(err.message || 'Failed to create booking. Please try again.');
     } finally {
       setLoading(false);
     }

@@ -16,6 +16,10 @@ export const ServiceModal: React.FC<ServiceModalProps> = ({ onClose }) => {
   const [skillId, setSkillId] = useState('');
   const [type, setType] = useState<'offer' | 'request'>('offer');
   const [loading, setLoading] = useState(false);
+  const [creditsPerHour, setCreditsPerHour] = useState<number>(1.0);
+
+  // Simple level rule: allow custom pricing once user has >= 5 reviews and rating >= 4.5
+  const canSetCustomCredits = !!user && user.total_reviews >= 5 && user.reputation_score >= 4.5;
 
   useEffect(() => {
     loadSkills();
@@ -37,7 +41,7 @@ export const ServiceModal: React.FC<ServiceModalProps> = ({ onClose }) => {
         skill_id: skillId,
         title,
         description,
-        credits_per_hour: 1.0,
+        credits_per_hour: canSetCustomCredits ? creditsPerHour : 1.0,
         status: 'active',
         type,
       });
@@ -61,6 +65,25 @@ export const ServiceModal: React.FC<ServiceModalProps> = ({ onClose }) => {
             <X className="w-5 h-5 text-gray-600" />
           </button>
         </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Credits per hour</label>
+                  {canSetCustomCredits ? (
+                    <input
+                      type="number"
+                      min={0.5}
+                      step={0.5}
+                      value={creditsPerHour}
+                      onChange={(e) => setCreditsPerHour(Number(e.target.value))}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                    />
+                  ) : (
+                    <div className="text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded-lg p-3">
+                      You currently earn at the default rate of <span className="font-semibold">1.0 credit/hr</span>.
+                      Reach <span className="font-semibold">level</span> (≥ 5 reviews, rating ≥ 4.5) to set your own rate.
+                    </div>
+                  )}
+                </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
           <div>

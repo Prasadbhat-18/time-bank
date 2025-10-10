@@ -1,315 +1,303 @@
-import {
-  User,
-  Skill,
-  Service,
-  TimeCredit,
-  Booking,
-  Transaction,
-  Review,
-  UserSkill,
-} from '../types';
-import {
-  mockUsers,
-  mockSkills,
-  mockServices,
-  mockTimeCredits,
-  mockBookings,
-  mockTransactions,
-  mockReviews,
-  mockUserSkills,
+﻿import { User, Skill, Service, TimeCredit, Booking, Transaction, Review, UserSkill } from '../types';
+import { 
+  mockUsers as initialMockUsers, 
+  mockSkills, 
+  mockServices as initialMockServices, 
+  mockBookings as initialMockBookings, 
+  mockTransactions as initialMockTransactions, 
+  mockReviews as initialMockReviews,
+  mockTimeCredits as initialMockTimeCredits,
+  mockUserSkills as initialMockUserSkills 
 } from './mockData';
 
-class DataService {
-  private users: User[] = [...mockUsers];
-  private skills: Skill[] = [...mockSkills];
-  private services: Service[] = [...mockServices];
-  private timeCredits: TimeCredit[] = [...mockTimeCredits];
-  private bookings: Booking[] = [...mockBookings];
-  private transactions: Transaction[] = [...mockTransactions];
-  private reviews: Review[] = [...mockReviews];
-  private userSkills: UserSkill[] = [...mockUserSkills];
-
-  async login(email: string, password: string): Promise<User | null> {
-    await this.delay();
-    const user = this.users.find((u) => u.email === email);
-    return user || null;
+// Load data from localStorage or use initial data
+const loadFromStorage = <T>(key: string, fallback: T[]): T[] => {
+  try {
+    const stored = localStorage.getItem(`timebank_${key}`);
+    return stored ? JSON.parse(stored) : fallback;
+  } catch {
+    return fallback;
   }
+};
 
-  async register(email: string, password: string, username: string): Promise<User> {
-    await this.delay();
-
-    const newUser: User = {
-      id: `user-${Date.now()}`,
-      email,
-      username,
-      bio: '',
-      reputation_score: 5.0,
-      total_reviews: 0,
-      created_at: new Date().toISOString(),
-    };
-
-    this.users.push(newUser);
-
-    const newCredit: TimeCredit = {
-      id: `tc-${Date.now()}`,
-      user_id: newUser.id,
-      balance: 10.0,
-      total_earned: 10.0,
-      total_spent: 0,
-      updated_at: new Date().toISOString(),
-    };
-    this.timeCredits.push(newCredit);
-
-    const transaction: Transaction = {
-      id: `t-${Date.now()}`,
-      to_user_id: newUser.id,
-      amount: 10.0,
-      transaction_type: 'signup_bonus',
-      description: 'Welcome bonus for joining TimeBank',
-      created_at: new Date().toISOString(),
-    };
-    this.transactions.push(transaction);
-
-    return newUser;
+const saveToStorage = <T>(key: string, data: T[]) => {
+  try {
+    localStorage.setItem(`timebank_${key}`, JSON.stringify(data));
+  } catch {
+    // Ignore storage errors
   }
+};
 
-  async getCurrentUser(userId: string): Promise<User | null> {
-    await this.delay();
-    return this.users.find((u) => u.id === userId) || null;
-  }
+// Initialize persistent arrays
+let mockUsers = loadFromStorage('users', initialMockUsers);
+let mockServices = loadFromStorage('services', initialMockServices);
+let mockBookings = loadFromStorage('bookings', initialMockBookings);
+let mockTransactions = loadFromStorage('transactions', initialMockTransactions);
+let mockReviews = loadFromStorage('reviews', initialMockReviews);
+let mockTimeCredits = loadFromStorage('time_credits', initialMockTimeCredits);
+let mockUserSkills = loadFromStorage('user_skills', initialMockUserSkills);
 
-  async updateProfile(userId: string, updates: Partial<User>): Promise<User> {
-    await this.delay();
-    const index = this.users.findIndex((u) => u.id === userId);
-    if (index !== -1) {
-      this.users[index] = { ...this.users[index], ...updates };
-      return this.users[index];
-    }
-    throw new Error('User not found');
-  }
-
+export const dataService = {
   async getUserById(userId: string): Promise<User | null> {
-    await this.delay();
-    return this.users.find((u) => u.id === userId) || null;
-  }
+    return mockUsers.find(user => user.id === userId) || null;
+  },
 
   async getTimeCredits(userId: string): Promise<TimeCredit | null> {
-    await this.delay();
-    return this.timeCredits.find((tc) => tc.user_id === userId) || null;
-  }
+    return mockTimeCredits.find(tc => tc.user_id === userId) || null;
+  },
+
+  async ensureInitialCredits(userId: string, amount: number = 10): Promise<TimeCredit> {
+    let tc = mockTimeCredits.find(t => t.user_id === userId);
+    if (!tc) {
+      tc = {
+        id: Date.now().toString(),
+        user_id: userId,
+        balance: amount,
+        total_earned: amount,
+        total_spent: 0,
+        updated_at: new Date().toISOString(),
+      };
+      mockTimeCredits.push(tc);
+      saveToStorage('time_credits', mockTimeCredits);
+    }
+    return tc;
+  },
 
   async getTransactions(userId: string): Promise<Transaction[]> {
-    await this.delay();
-    const userTransactions = this.transactions
-      .filter((t) => t.from_user_id === userId || t.to_user_id === userId)
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-
-    return userTransactions.map((t) => ({
-      ...t,
-      from_user: t.from_user_id ? this.users.find((u) => u.id === t.from_user_id) : undefined,
-      to_user: t.to_user_id ? this.users.find((u) => u.id === t.to_user_id) : undefined,
-    }));
-  }
+    return mockTransactions.filter(t => t.from_user_id === userId || t.to_user_id === userId);
+  },
 
   async getSkills(): Promise<Skill[]> {
-    await this.delay();
-    return [...this.skills];
-  }
+    return mockSkills;
+  },
 
   async getUserSkills(userId: string): Promise<UserSkill[]> {
-    await this.delay();
-    return this.userSkills
-      .filter((us) => us.user_id === userId)
-      .map((us) => ({
-        ...us,
-        skill: this.skills.find((s) => s.id === us.skill_id),
-      }));
-  }
+    return mockUserSkills.filter(us => us.user_id === userId);
+  },
 
   async addUserSkill(userId: string, skillId: string, type: 'offered' | 'needed', proficiencyLevel: string): Promise<UserSkill> {
-    await this.delay();
     const newUserSkill: UserSkill = {
-      id: `us-${Date.now()}`,
+      id: Date.now().toString(),
       user_id: userId,
       skill_id: skillId,
       type,
       proficiency_level: proficiencyLevel as 'beginner' | 'intermediate' | 'expert',
+      skill: mockSkills.find(s => s.id === skillId)
     };
-    this.userSkills.push(newUserSkill);
+    // Persist in-memory and localStorage
+    mockUserSkills.push(newUserSkill);
+    saveToStorage('user_skills', mockUserSkills);
     return newUserSkill;
-  }
+  },
 
   async removeUserSkill(userSkillId: string): Promise<void> {
-    await this.delay();
-    this.userSkills = this.userSkills.filter((us) => us.id !== userSkillId);
-  }
+    const idx = mockUserSkills.findIndex(us => us.id === userSkillId);
+    if (idx !== -1) {
+      mockUserSkills.splice(idx, 1);
+      saveToStorage('user_skills', mockUserSkills);
+    }
+  },
 
   async getServices(filters?: { category?: string; type?: string; search?: string }): Promise<Service[]> {
-    await this.delay();
-    let filteredServices = this.services.filter((s) => s.status === 'active');
-
+    let filtered = [...mockServices];
+    
     if (filters?.type) {
-      filteredServices = filteredServices.filter((s) => s.type === filters.type);
+      filtered = filtered.filter(s => s.type === filters.type);
     }
-
+    
     if (filters?.search) {
-      const search = filters.search.toLowerCase();
-      filteredServices = filteredServices.filter(
-        (s) =>
-          s.title.toLowerCase().includes(search) ||
-          s.description.toLowerCase().includes(search)
+      const term = filters.search.toLowerCase();
+      filtered = filtered.filter(s => 
+        s.title.toLowerCase().includes(term) || 
+        s.description.toLowerCase().includes(term)
       );
     }
-
+    
     if (filters?.category) {
-      filteredServices = filteredServices.filter((s) => {
-        const skill = this.skills.find((sk) => sk.id === s.skill_id);
-        return skill?.category === filters.category;
-      });
+      const categorySkills = mockSkills.filter(s => s.category === filters.category);
+      const skillIds = categorySkills.map(s => s.id);
+      filtered = filtered.filter(s => skillIds.includes(s.skill_id));
     }
 
-    return filteredServices
-      .map((s) => ({
-        ...s,
-        provider: this.users.find((u) => u.id === s.provider_id),
-        skill: this.skills.find((sk) => sk.id === s.skill_id),
-      }))
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  }
+    // Enrich with provider and skill so UI can render footer and booking button
+    const enriched = filtered.map(s => ({
+      ...s,
+      provider: mockUsers.find(u => u.id === s.provider_id),
+      skill: mockSkills.find(sk => sk.id === s.skill_id),
+    })) as Service[];
+    return enriched;
+  },
 
   async getUserServices(userId: string): Promise<Service[]> {
-    await this.delay();
-    return this.services
-      .filter((s) => s.provider_id === userId)
-      .map((s) => ({
-        ...s,
-        skill: this.skills.find((sk) => sk.id === s.skill_id),
-      }))
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  }
+    const services = mockServices.filter(service => service.provider_id === userId);
+    return services.map(s => ({
+      ...s,
+      provider: mockUsers.find(u => u.id === s.provider_id),
+      skill: mockSkills.find(sk => sk.id === s.skill_id),
+    })) as Service[];
+  },
 
   async createService(service: Omit<Service, 'id' | 'created_at'>): Promise<Service> {
-    await this.delay();
     const newService: Service = {
       ...service,
-      id: `s-${Date.now()}`,
-      created_at: new Date().toISOString(),
+      id: Date.now().toString(),
+      created_at: new Date().toISOString()
     };
-    this.services.push(newService);
-    return newService;
-  }
+    // Persist in-memory and localStorage
+    mockServices.push(newService);
+    saveToStorage('services', mockServices);
+    // Return enriched
+    return {
+      ...newService,
+      provider: mockUsers.find(u => u.id === newService.provider_id),
+      skill: mockSkills.find(sk => sk.id === newService.skill_id),
+    } as Service;
+  },
 
   async updateService(serviceId: string, updates: Partial<Service>): Promise<Service> {
-    await this.delay();
-    const index = this.services.findIndex((s) => s.id === serviceId);
-    if (index !== -1) {
-      this.services[index] = { ...this.services[index], ...updates };
-      return this.services[index];
-    }
-    throw new Error('Service not found');
-  }
+    const idx = mockServices.findIndex(s => s.id === serviceId);
+    if (idx === -1) throw new Error('Service not found');
+    const updated = { ...mockServices[idx], ...updates } as Service;
+    mockServices[idx] = updated;
+    saveToStorage('services', mockServices);
+    return {
+      ...updated,
+      provider: mockUsers.find(u => u.id === updated.provider_id),
+      skill: mockSkills.find(sk => sk.id === updated.skill_id),
+    } as Service;
+  },
 
   async deleteService(serviceId: string): Promise<void> {
-    await this.delay();
-    this.services = this.services.filter((s) => s.id !== serviceId);
-  }
+    const idx = mockServices.findIndex(s => s.id === serviceId);
+    if (idx !== -1) {
+      mockServices.splice(idx, 1);
+      saveToStorage('services', mockServices);
+    }
+  },
 
   async getBookings(userId: string): Promise<Booking[]> {
-    await this.delay();
-    return this.bookings
-      .filter((b) => b.provider_id === userId || b.requester_id === userId)
-      .map((b) => ({
-        ...b,
-        provider: this.users.find((u) => u.id === b.provider_id),
-        requester: this.users.find((u) => u.id === b.requester_id),
-        service: this.services.find((s) => s.id === b.service_id),
-      }))
-      .sort((a, b) => new Date(b.scheduled_start).getTime() - new Date(a.scheduled_start).getTime());
-  }
+    const bookings = mockBookings.filter(booking => 
+      booking.provider_id === userId || booking.requester_id === userId
+    );
+    // Enrich bookings with related entities
+    return bookings.map(b => ({
+      ...b,
+      provider: mockUsers.find(u => u.id === b.provider_id),
+      requester: mockUsers.find(u => u.id === b.requester_id),
+      service: mockServices.find(s => s.id === b.service_id),
+    })) as Booking[];
+  },
 
   async createBooking(booking: Omit<Booking, 'id' | 'created_at' | 'status'>): Promise<Booking> {
-    await this.delay();
     const newBooking: Booking = {
       ...booking,
-      id: `b-${Date.now()}`,
+      id: Date.now().toString(),
       status: 'pending',
-      created_at: new Date().toISOString(),
+      created_at: new Date().toISOString()
     };
-    this.bookings.push(newBooking);
-    return newBooking;
-  }
+
+    // Check if requester has enough credits
+    const requesterCredits = mockTimeCredits.find(tc => tc.user_id === booking.requester_id);
+    const service = mockServices.find(s => s.id === booking.service_id);
+    
+    if (requesterCredits && service) {
+      const requiredCredits = booking.duration_hours * service.credits_per_hour;
+      if (requesterCredits.balance < requiredCredits) {
+        throw new Error('Insufficient credits to book this service');
+      }
+      
+      // Deduct credits immediately upon booking
+      requesterCredits.balance -= requiredCredits;
+      requesterCredits.total_spent += requiredCredits;
+      requesterCredits.updated_at = new Date().toISOString();
+    }
+
+    // Persist in-memory and localStorage
+    mockBookings.push(newBooking);
+    saveToStorage('bookings', mockBookings);
+    saveToStorage('time_credits', mockTimeCredits);
+    return {
+      ...newBooking,
+      provider: mockUsers.find(u => u.id === newBooking.provider_id),
+      requester: mockUsers.find(u => u.id === newBooking.requester_id),
+      service: mockServices.find(s => s.id === newBooking.service_id),
+    } as Booking;
+  },
 
   async updateBooking(bookingId: string, updates: Partial<Booking>): Promise<Booking> {
-    await this.delay();
-    const index = this.bookings.findIndex((b) => b.id === bookingId);
-    if (index !== -1) {
-      this.bookings[index] = { ...this.bookings[index], ...updates };
-
-      if (updates.status === 'completed') {
-        const booking = this.bookings[index];
-        const providerCredits = this.timeCredits.find((tc) => tc.user_id === booking.provider_id);
-        const requesterCredits = this.timeCredits.find((tc) => tc.user_id === booking.requester_id);
-
-        if (providerCredits && requesterCredits) {
-          providerCredits.balance += booking.duration_hours;
-          providerCredits.total_earned += booking.duration_hours;
-          requesterCredits.balance -= booking.duration_hours;
-          requesterCredits.total_spent += booking.duration_hours;
-
-          const transaction: Transaction = {
-            id: `t-${Date.now()}`,
-            from_user_id: booking.requester_id,
-            to_user_id: booking.provider_id,
-            booking_id: booking.id,
-            amount: booking.duration_hours,
-            transaction_type: 'service_completed',
-            description: `Payment for ${this.services.find((s) => s.id === booking.service_id)?.title || 'service'}`,
-            created_at: new Date().toISOString(),
-          };
-          this.transactions.push(transaction);
-        }
+    const idx = mockBookings.findIndex(b => b.id === bookingId);
+    if (idx === -1) throw new Error('Booking not found');
+    const originalBooking = mockBookings[idx];
+    const updated = { ...originalBooking, ...updates } as Booking;
+    
+    // If booking is being marked as completed, award credits to provider
+    if (updates.status === 'completed' && originalBooking.status !== 'completed') {
+      const providerCredits = mockTimeCredits.find(tc => tc.user_id === updated.provider_id);
+      const service = mockServices.find(s => s.id === updated.service_id);
+      
+      if (providerCredits && service && updated.duration_hours) {
+        const earnedCredits = updated.duration_hours * service.credits_per_hour;
+        providerCredits.balance += earnedCredits;
+        providerCredits.total_earned += earnedCredits;
+        providerCredits.updated_at = new Date().toISOString();
+        
+        // Create transaction record
+        const transaction = {
+          id: Date.now().toString(),
+          from_user_id: updated.requester_id,
+          to_user_id: updated.provider_id,
+          booking_id: bookingId,
+          amount: earnedCredits,
+          transaction_type: 'service_completed' as const,
+          description: `Payment for: ${service.title}`,
+          created_at: new Date().toISOString(),
+        };
+        mockTransactions.push(transaction);
       }
-
-      return this.bookings[index];
     }
-    throw new Error('Booking not found');
-  }
+    
+    mockBookings[idx] = updated;
+    saveToStorage('bookings', mockBookings);
+    saveToStorage('time_credits', mockTimeCredits);
+    saveToStorage('transactions', mockTransactions);
+    return {
+      ...updated,
+      provider: mockUsers.find(u => u.id === updated.provider_id),
+      requester: mockUsers.find(u => u.id === updated.requester_id),
+      service: mockServices.find(s => s.id === updated.service_id),
+    } as Booking;
+  },
 
   async getReviews(userId: string): Promise<Review[]> {
-    await this.delay();
-    return this.reviews
-      .filter((r) => r.reviewee_id === userId)
-      .map((r) => ({
-        ...r,
-        reviewer: this.users.find((u) => u.id === r.reviewer_id),
-      }))
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  }
+    const reviews = mockReviews.filter(review => review.reviewee_id === userId);
+    return reviews.map(r => ({
+      ...r,
+      reviewer: mockUsers.find(u => u.id === r.reviewer_id),
+      reviewee: mockUsers.find(u => u.id === r.reviewee_id),
+    })) as Review[];
+  },
 
   async createReview(review: Omit<Review, 'id' | 'created_at'>): Promise<Review> {
-    await this.delay();
     const newReview: Review = {
       ...review,
-      id: `r-${Date.now()}`,
-      created_at: new Date().toISOString(),
+      id: Date.now().toString(),
+      created_at: new Date().toISOString()
     };
-    this.reviews.push(newReview);
+    mockReviews.push(newReview);
+    saveToStorage('reviews', mockReviews);
+    return {
+      ...newReview,
+      reviewer: mockUsers.find(u => u.id === newReview.reviewer_id),
+      reviewee: mockUsers.find(u => u.id === newReview.reviewee_id),
+    } as Review;
+  },
 
-    const userReviews = this.reviews.filter((r) => r.reviewee_id === review.reviewee_id);
-    const avgRating = userReviews.reduce((acc, r) => acc + r.rating, 0) / userReviews.length;
-
-    const userIndex = this.users.findIndex((u) => u.id === review.reviewee_id);
-    if (userIndex !== -1) {
-      this.users[userIndex].reputation_score = Number(avgRating.toFixed(1));
-      this.users[userIndex].total_reviews = userReviews.length;
-    }
-
-    return newReview;
-  }
-
-  private delay(): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, 300));
-  }
-}
-
-export const dataService = new DataService();
+  async updateUser(userId: string, updates: Partial<User>): Promise<User> {
+    const idx = mockUsers.findIndex(u => u.id === userId);
+    if (idx === -1) throw new Error('User not found');
+    const updated = { ...mockUsers[idx], ...updates };
+    mockUsers[idx] = updated;
+    saveToStorage('users', mockUsers);
+    return updated;
+  },
+};

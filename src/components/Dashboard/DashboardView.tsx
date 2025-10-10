@@ -8,6 +8,7 @@ import {
   Clock,
   Users,
   ArrowRight,
+  HelpCircle,
 } from 'lucide-react';
 import { TimeCredit, Booking, Service, Review } from '../../types';
 import { dataService } from '../../services/dataService';
@@ -19,6 +20,7 @@ export const DashboardView: React.FC = () => {
   const [recentServices, setRecentServices] = useState<Service[]>([]);
   const [recentReviews, setRecentReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showHowItWorks, setShowHowItWorks] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -56,7 +58,62 @@ export const DashboardView: React.FC = () => {
   }
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
+    <div className="max-w-7xl mx-auto space-y-6 relative">
+      {/* Floating How it Works Button */}
+      <button
+        className="fixed bottom-20 md:bottom-8 left-4 md:left-8 z-50 bg-gradient-to-r from-emerald-500 to-cyan-500 text-white px-4 md:px-6 py-2 md:py-3 rounded-full shadow-lg flex items-center gap-2 hover:scale-105 hover:shadow-emerald-500/40 transition-all text-sm md:text-lg font-semibold"
+        onClick={() => setShowHowItWorks(true)}
+      >
+        <HelpCircle className="w-5 h-5 md:w-6 md:h-6" />
+        How it works
+      </button>
+
+      {/* How it Works Modal */}
+      {showHowItWorks && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full mx-4 p-6 md:p-8 relative animate-fade-in">
+            <button
+              className="absolute top-4 right-4 text-gray-400 hover:text-emerald-500 text-2xl"
+              onClick={() => setShowHowItWorks(false)}
+              aria-label="Close"
+            >
+              &times;
+            </button>
+            <h2 className="text-2xl font-bold text-emerald-700 mb-4 flex items-center gap-2">
+              <HelpCircle className="w-7 h-7" /> How TimeBank Works
+            </h2>
+            <ol className="space-y-4 text-gray-700 text-base">
+              <li>
+                <span className="font-semibold text-emerald-600">1. Register or Login:</span> Create your account or use a demo login to get started instantly.
+              </li>
+              <li>
+                <span className="font-semibold text-emerald-600">2. Set up your profile:</span> Add your skills, bio, and upload a profile picture so others can recognize you.
+              </li>
+              <li>
+                <span className="font-semibold text-emerald-600">3. Explore services:</span> Browse the marketplace to find skills you need or offer your own services to the community.
+              </li>
+              <li>
+                <span className="font-semibold text-emerald-600">4. Book or post:</span> Book a service from others or post your own. Use your time credits to exchange value.
+              </li>
+              <li>
+                <span className="font-semibold text-emerald-600">5. Earn & spend credits:</span> Earn credits by helping others, and spend them to get help in return. All activity is tracked in your wallet.
+              </li>
+              <li>
+                <span className="font-semibold text-emerald-600">6. Review & connect:</span> Leave reviews, build your reputation, and grow your network in the TimeBank community!
+              </li>
+            </ol>
+            <div className="mt-6 flex justify-center">
+              <button
+                className="px-6 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg font-semibold shadow-md transition"
+                onClick={() => setShowHowItWorks(false)}
+              >
+                Got it!
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div>
         <h1 className="text-3xl font-bold text-gray-800">Welcome back, {user?.username}!</h1>
         <p className="text-gray-600 mt-1">Here's what's happening with your TimeBank account</p>

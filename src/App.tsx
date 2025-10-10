@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { LoginForm } from './components/Auth/LoginForm';
 import { RegisterForm } from './components/Auth/RegisterForm';
@@ -39,14 +39,14 @@ function AppContent() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 flex items-center justify-center p-4">
         <div className="w-full max-w-6xl">
-          <div className="text-center mb-8">
-            <div className="flex items-center justify-center mb-4">
-              <div className="w-16 h-16 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl flex items-center justify-center shadow-xl">
-                <Clock className="w-10 h-10 text-white" />
+          <div className="text-center mb-6 md:mb-8">
+            <div className="flex items-center justify-center mb-3 md:mb-4">
+              <div className="w-12 h-12 md:w-16 md:h-16 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl flex items-center justify-center shadow-xl">
+                <Clock className="w-7 h-7 md:w-10 md:h-10 text-white" />
               </div>
             </div>
-            <h1 className="text-5xl font-bold text-gray-800 mb-3">TimeBank</h1>
-            <p className="text-xl text-gray-600">Exchange Skills, Share Time, Build Community</p>
+            <h1 className="text-3xl md:text-5xl font-bold text-gray-800 mb-2 md:mb-3">TimeBank</h1>
+            <p className="text-lg md:text-xl text-gray-600 px-4">Exchange Skills, Share Time, Build Community</p>
           </div>
 
           {authMode === 'login' ? (
@@ -94,21 +94,23 @@ function AppContent() {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-      <nav className="bg-white shadow-lg border-b border-gray-200">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 pb-20 md:pb-4">
+      {/* Mobile-First Header */}
+      <header className="bg-white shadow-lg border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl flex items-center justify-center">
-                <Clock className="w-6 h-6 text-white" />
+          <div className="flex items-center justify-between h-14 md:h-16">
+            <div className="flex items-center gap-2 md:gap-3">
+              <div className="w-8 h-8 md:w-10 md:h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl flex items-center justify-center">
+                <Clock className="w-5 h-5 md:w-6 md:h-6 text-white" />
               </div>
               <div>
-                <h1 className="text-xl font-bold text-gray-800">TimeBank</h1>
-                <p className="text-xs text-gray-500">Skill Exchange Platform</p>
+                <h1 className="text-lg md:text-xl font-bold text-gray-800">TimeBank</h1>
+                <p className="hidden md:block text-xs text-gray-500">Skill Exchange Platform</p>
               </div>
             </div>
 
-            <div className="flex items-center gap-6">
+            {/* Desktop Navigation */}
+            <div className="hidden md:flex items-center gap-6">
               {navItems.map((item) => {
                 const Icon = item.icon;
                 return (
@@ -135,11 +137,46 @@ function AppContent() {
                 <span className="hidden md:inline">Logout</span>
               </button>
             </div>
+
+            {/* Mobile Logout Button */}
+            <div className="md:hidden">
+              <button
+                onClick={logout}
+                className="flex items-center justify-center w-8 h-8 text-red-600 hover:bg-red-50 rounded-lg transition"
+                title="Logout"
+              >
+                <LogOut className="w-5 h-5" />
+              </button>
+            </div>
           </div>
+        </div>
+      </header>
+
+      {/* Mobile Bottom Navigation */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-40">
+        <div className="flex items-center justify-around py-2">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.id}
+                onClick={() => setCurrentView(item.id)}
+                className={`flex flex-col items-center justify-center py-2 px-3 rounded-lg transition-all ${
+                  currentView === item.id
+                    ? 'text-emerald-600 bg-emerald-50'
+                    : 'text-gray-600 hover:text-emerald-600 hover:bg-gray-50'
+                }`}
+              >
+                <Icon className="w-5 h-5 mb-1" />
+                <span className="text-xs font-medium">{item.label}</span>
+              </button>
+            );
+          })}
         </div>
       </nav>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      {/* Main Content */}
+      <main className="max-w-7xl mx-auto px-3 md:px-4 lg:px-8 py-4 md:py-8">
         {currentView === 'dashboard' && <DashboardView />}
         {currentView === 'profile' && <ProfileView />}
         {currentView === 'wallet' && <WalletView />}

@@ -1,41 +1,141 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 interface Location {
   lat: number;
   lng: number;
+  accuracy?: number;
+  timestamp?: number;
+}
+
+interface GeolocationState {
+  location: Location | undefined;
+  error: string | null;
+  loading: boolean;
+  permissionStatus: string | null;
 }
 
 export function useGeolocation() {
-  const [location, setLocation] = useState<Location | undefined>();
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [state, setState] = useState<GeolocationState>({
+    location: undefined,
+    error: null,
+    loading: true,
+    permissionStatus: null
+  });
 
-  useEffect(() => {
-    if (!navigator.geolocation) {
-      setError('Geolocation is not supported by this browser');
-      setLoading(false);
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setLocation({
-          lat: position.coords.latitude,
-          lng: position.coords.longitude
-        });
-        setLoading(false);
-      },
-      (error) => {
-        setError(`Location access denied: ${error.message}`);
-        setLoading(false);
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 5000,
-        maximumAge: 0
+  const requestLocationPermission = useCallback(async () => {
+    try {
+      // Check if browser supports geolocation
+      if (!navigator.geolocation) {
+        setState(prev => ({
+          ...prev,
+          error: 'Geolocation is not supported by this browser',
+          loading: false
+        }));
+        return;
       }
-    );
+
+      // Check permission status first
+      if ('permissions' in navigator) {
+        const permission = await navigator.permissions.query({ name: 'geolocation' });
+        setState(prev => ({ ...prev, permissionStatus: permission.state }));
+
+        // Listen for permission changes
+        permission.onchange = () => {
+          setState(prev => ({ ...prev, permissionStatus: permission.state }));
+        };
+      }
+
+      // Request high-accuracy location
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const newLocation: Location = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+            accuracy: position.coords.accuracy,
+            timestamp: position.timestamp
+          };
+          
+          setState(prev => ({
+            ...prev,
+            location: newLocation,
+            loading: false,
+            error: null
+          }));
+
+          // Set up continuous watching for precise location
+          navigator.geolocation.watchPosition(
+            (position) => {
+              const updatedLocation: Location = {
+                lat: position.coords.latitude,
+                lng: position.coords.longitude,
+                accuracy: position.coords.accuracy,
+                timestamp: position.timestamp
+              };
+              setState(prev => ({ ...prev, location: updatedLocation }));
+            },
+            (error) => {
+              console.warn('Location watch error:', error.message);
+            },
+            {
+              enableHighAccuracy: true,
+              timeout: 10000,
+              maximumAge: 30000 // Allow 30 second old readings
+            }
+          );
+        },
+        (error) => {
+          let errorMessage = 'Unable to retrieve location';
+          
+          switch (error.code) {
+            case error.PERMISSION_DENIED:
+              errorMessage = 'Location access denied by user. Please enable location permissions in your browser settings to use emergency features.';
+              break;
+            case error.POSITION_UNAVAILABLE:
+              errorMessage = 'Location information is unavailable. Please check your GPS/location services.';
+              break;
+            case error.TIMEOUT:
+              errorMessage = 'Location request timed out. Please try again.';
+              break;
+            default:
+              errorMessage = `Location error: ${error.message}`;
+              break;
+          }
+
+          setState(prev => ({
+            ...prev,
+            error: errorMessage,
+            loading: false
+          }));
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 15000,
+          maximumAge: 0 // Always get fresh location
+        }
+      );
+    } catch (err) {
+      setState(prev => ({
+        ...prev,
+        error: 'Failed to access location services',
+        loading: false
+      }));
+    }
   }, []);
 
-  return { location, error, loading };
+  useEffect(() => {
+    requestLocationPermission();
+  }, [requestLocationPermission]);
+
+  const refreshLocation = useCallback(() => {
+    setState(prev => ({ ...prev, loading: true, error: null }));
+    requestLocationPermission();
+  }, [requestLocationPermission]);
+
+  return {
+    location: state.location,
+    error: state.error,
+    loading: state.loading,
+    permissionStatus: state.permissionStatus,
+    refreshLocation
+  };
 }

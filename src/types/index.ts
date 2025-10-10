@@ -4,6 +4,9 @@ export interface User {
   username: string;
   bio: string;
   avatar_url?: string;
+  phone?: string;
+  location?: string;
+  skills?: string[];
   reputation_score: number;
   total_reviews: number;
   created_at: string;

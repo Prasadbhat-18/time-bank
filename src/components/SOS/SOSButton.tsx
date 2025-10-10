@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { Phone, AlertTriangle, X, MapPin } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Phone, AlertTriangle, X, MapPin, RefreshCw, Shield } from 'lucide-react';
+import { useGeolocation } from '../../hooks/useGeolocation';
 
 interface SOSButtonProps {
   userLocation?: { lat: number; lng: number };
@@ -17,6 +18,12 @@ export function SOSButton({ userLocation }: SOSButtonProps) {
   const [isActivated, setIsActivated] = useState(false);
   const [countdown, setCountdown] = useState(0);
   const [personalContacts, setPersonalContacts] = useState<EmergencyContact[]>([]);
+  
+  // Use enhanced geolocation hook
+  const { location, error: locationError, loading: locationLoading, permissionStatus, refreshLocation } = useGeolocation();
+  
+  // Use precise location from hook, fallback to prop
+  const currentLocation = location || userLocation;
 
   // Load emergency contacts from localStorage
   useEffect(() => {
@@ -27,10 +34,10 @@ export function SOSButton({ userLocation }: SOSButtonProps) {
   }, []);
 
   const officialEmergencyContacts = [
-    { name: 'Emergency Services', number: '911', type: 'emergency' },
-    { name: 'Police', number: '911', type: 'police' },
-    { name: 'Medical Emergency', number: '911', type: 'medical' },
-    { name: 'Fire Department', number: '911', type: 'fire' },
+    { name: 'Emergency Services', number: '112', type: 'emergency' },
+    { name: 'Police', number: '100', type: 'police' },
+    { name: 'Ambulance', number: '100', type: 'medical' },
+    { name: 'Fire Department', number: '112', type: 'fire' },
   ];
 
   const handleSOSActivation = () => {
@@ -62,11 +69,19 @@ export function SOSButton({ userLocation }: SOSButtonProps) {
 
   const triggerSOSActions = () => {
     // Send location to emergency contacts
-    if (userLocation) {
-      const locationMessage = `Emergency Alert: I need help! My location: https://maps.google.com/maps?q=${userLocation.lat},${userLocation.lng}`;
+    if (currentLocation) {
+      const accuracy = location?.accuracy ? ` (±${Math.round(location.accuracy)}m)` : '';
+      const locationMessage = `🚨 EMERGENCY ALERT 🚨\n\nI need immediate help!\n\nPrecise Location: https://maps.google.com/maps?q=${currentLocation.lat},${currentLocation.lng}${accuracy}\n\nCoordinates:\nLatitude: ${currentLocation.lat.toFixed(6)}\nLongitude: ${currentLocation.lng.toFixed(6)}\n\nTime: ${new Date().toLocaleString()}`;
       
       // In a real app, this would send SMS/notifications to emergency contacts
-      console.log('SOS Activated:', locationMessage);
+      console.log('🚨 SOS ACTIVATED:', locationMessage);
+      
+      // Copy location to clipboard for easy sharing
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(locationMessage).catch(() => {
+          console.log('Could not copy to clipboard');
+        });
+      }
       
       // You could integrate with:
       // - SMS API to send location to emergency contacts
@@ -110,15 +125,15 @@ export function SOSButton({ userLocation }: SOSButtonProps) {
       {/* Main SOS Button */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="fixed bottom-6 right-6 w-16 h-16 bg-gradient-to-br from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white rounded-full shadow-2xl flex items-center justify-center z-40 transition-all duration-300 animate-pulse border-4 border-white"
+        className="fixed bottom-20 md:bottom-6 right-4 md:right-6 w-14 h-14 md:w-16 md:h-16 bg-gradient-to-br from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white rounded-full shadow-2xl flex items-center justify-center z-40 transition-all duration-300 animate-pulse border-4 border-white"
         aria-label="Emergency SOS Button"
       >
-        <AlertTriangle className="w-8 h-8" />
+        <AlertTriangle className="w-7 h-7 md:w-8 md:h-8" />
       </button>
 
       {/* Expanded SOS Panel */}
       {isExpanded && (
-        <div className="fixed bottom-24 right-6 bg-white rounded-2xl shadow-2xl border border-gray-200 p-6 z-40 min-w-80">
+        <div className="fixed bottom-36 md:bottom-24 right-4 md:right-6 bg-white rounded-2xl shadow-2xl border border-gray-200 p-4 md:p-6 z-40 w-80 max-w-[calc(100vw-2rem)]">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center">
@@ -136,14 +151,67 @@ export function SOSButton({ userLocation }: SOSButtonProps) {
 
           {/* Location Status */}
           <div className="bg-gray-50 rounded-lg p-3 mb-4">
-            <div className="flex items-center gap-2 text-sm text-gray-600">
-              <MapPin className="w-4 h-4" />
-              <span>
-                {userLocation 
-                  ? `Location: ${userLocation.lat.toFixed(4)}, ${userLocation.lng.toFixed(4)}`
-                  : 'Location not available'
-                }
-              </span>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-blue-600" />
+                <span className="text-sm font-medium text-gray-700">Location Status</span>
+              </div>
+              {currentLocation && (
+                <button
+                  onClick={refreshLocation}
+                  className="p-1 hover:bg-gray-200 rounded transition-colors"
+                  title="Refresh location"
+                >
+                  <RefreshCw className="w-3 h-3 text-gray-500" />
+                </button>
+              )}
+            </div>
+            
+            <div className="text-sm">
+              {locationLoading && (
+                <div className="flex items-center gap-2 text-blue-600">
+                  <div className="w-3 h-3 border-2 border-blue-600/30 border-t-blue-600 rounded-full animate-spin"></div>
+                  <span>Getting precise location...</span>
+                </div>
+              )}
+              
+              {currentLocation && !locationLoading && (
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 text-green-600">
+                    <Shield className="w-3 h-3" />
+                    <span className="font-medium">Location acquired</span>
+                  </div>
+                  <div className="text-xs text-gray-500 ml-5">
+                    <div>Lat: {currentLocation.lat.toFixed(6)}</div>
+                    <div>Lng: {currentLocation.lng.toFixed(6)}</div>
+                    {location?.accuracy && (
+                      <div>Accuracy: ±{Math.round(location.accuracy)}m</div>
+                    )}
+                  </div>
+                </div>
+              )}
+              
+              {locationError && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-red-600">
+                    <AlertTriangle className="w-3 h-3" />
+                    <span className="font-medium">Location access needed</span>
+                  </div>
+                  <div className="text-xs text-gray-600">{locationError}</div>
+                  {permissionStatus === 'denied' && (
+                    <div className="text-xs text-orange-600 bg-orange-50 p-2 rounded">
+                      Please enable location permissions in your browser settings for emergency features to work properly.
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {!currentLocation && !locationLoading && !locationError && (
+                <div className="flex items-center gap-2 text-yellow-600">
+                  <AlertTriangle className="w-3 h-3" />
+                  <span>Location not available</span>
+                </div>
+              )}
             </div>
           </div>
 
