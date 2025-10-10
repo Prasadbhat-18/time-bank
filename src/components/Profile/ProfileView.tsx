@@ -255,6 +255,10 @@ export const ProfileView: React.FC = () => {
               </div>
             </div>
           </div>
+          )}
+          {activeTab === 'emergency' && (
+            <EmergencyContactsManager />
+          )}
         </div>
       </div>
 
@@ -312,14 +316,6 @@ export const ProfileView: React.FC = () => {
           </div>
         </div>
       )}
-            </div>
-          )}
-
-          {activeTab === 'emergency' && (
-            <EmergencyContactsManager />
-          )}
-        </div>
-      </div>
     </div>
   );
 };
