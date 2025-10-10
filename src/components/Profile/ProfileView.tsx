@@ -1,6 +1,7 @@
 ﻿import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { Camera, Edit, Save, X, User, Mail, Phone, MapPin, Award, Clock } from 'lucide-react';
+import { Camera, Edit, Save, X, User, Mail, Phone, MapPin, Award, Clock, Shield, Plus, Trash2, PhoneCall } from 'lucide-react';
+import { EmergencyContact } from '../../types';
 
 export const ProfileView: React.FC = () => {
   const { user, updateUser } = useAuth();
@@ -14,6 +15,16 @@ export const ProfileView: React.FC = () => {
     bio: user?.bio || '',
     skills: user?.skills?.join(', ') || '',
     location: user?.location || ''
+  });
+  const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>(
+    user?.emergency_contacts || []
+  );
+  const [showAddContact, setShowAddContact] = useState(false);
+  const [newContact, setNewContact] = useState({
+    name: '',
+    phone: '',
+    relationship: '',
+    isPrimary: false
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -38,6 +49,7 @@ export const ProfileView: React.FC = () => {
           skills: user.skills?.join(', ') || '',
           location: user.location || ''
         });
+        setEmergencyContacts(user.emergency_contacts || []);
       }
     }, [user]);
 
@@ -66,11 +78,44 @@ export const ProfileView: React.FC = () => {
         phone: editData.phone,
         bio: editData.bio,
         skills: editData.skills.split(',').map((s: string) => s.trim()).filter((s: string) => s),
-        location: editData.location
+        location: editData.location,
+        emergency_contacts: emergencyContacts
       };
       updateUser(updatedUser);
     }
     setEditing(false);
+  };
+
+  const handleAddEmergencyContact = () => {
+    if (newContact.name && newContact.phone) {
+      const contact: EmergencyContact = {
+        id: Date.now().toString(),
+        ...newContact
+      };
+      
+      // If this is set as primary, remove primary from others
+      let updatedContacts = emergencyContacts;
+      if (contact.isPrimary) {
+        updatedContacts = emergencyContacts.map(c => ({ ...c, isPrimary: false }));
+      }
+      
+      setEmergencyContacts([...updatedContacts, contact]);
+      setNewContact({ name: '', phone: '', relationship: '', isPrimary: false });
+      setShowAddContact(false);
+    }
+  };
+
+  const handleDeleteEmergencyContact = (contactId: string) => {
+    setEmergencyContacts(emergencyContacts.filter(c => c.id !== contactId));
+  };
+
+  const handleCallEmergencyContact = (phone: string) => {
+    window.location.href = `tel:${phone}`;
+  };
+
+  const validatePhoneNumber = (phone: string) => {
+    const phoneRegex = /^[\+]?[1-9][\d]{0,15}$/;
+    return phoneRegex.test(phone.replace(/[\s\-\(\)]/g, ''));
   };
 
   const handleCancel = () => {
@@ -325,6 +370,168 @@ export const ProfileView: React.FC = () => {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Emergency Contacts */}
+      <div className="bg-white rounded-xl shadow-lg p-4 md:p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-semibold text-gray-800 flex items-center gap-2">
+            <Shield className="w-5 h-5 text-red-500" />
+            Emergency Contacts
+          </h2>
+          <button
+            onClick={() => setShowAddContact(true)}
+            className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors tap-target"
+          >
+            <Plus className="w-4 h-4" />
+            Add Contact
+          </button>
+        </div>
+
+        {/* Emergency Contacts List */}
+        <div className="space-y-3">
+          {emergencyContacts.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              <Shield className="w-12 h-12 mx-auto text-gray-300 mb-3" />
+              <p>No emergency contacts added yet</p>
+              <p className="text-sm">Add contacts for quick access during emergencies</p>
+            </div>
+          ) : (
+            emergencyContacts.map((contact) => (
+              <div key={contact.id} className="bg-gray-50 rounded-lg p-4 flex items-center justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <h4 className="font-semibold text-gray-800">{contact.name}</h4>
+                    {contact.isPrimary && (
+                      <span className="bg-red-100 text-red-700 px-2 py-1 rounded-full text-xs font-medium">
+                        Primary
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm text-gray-600 mb-1">
+                    <Phone className="w-3 h-3 inline mr-1" />
+                    {contact.phone}
+                  </p>
+                  {contact.relationship && (
+                    <p className="text-sm text-gray-500">{contact.relationship}</p>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleCallEmergencyContact(contact.phone)}
+                    className="bg-green-500 hover:bg-green-600 text-white p-2 rounded-lg transition-colors tap-target"
+                    title="Call now"
+                  >
+                    <PhoneCall className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => handleDeleteEmergencyContact(contact.id)}
+                    className="bg-red-500 hover:bg-red-600 text-white p-2 rounded-lg transition-colors tap-target"
+                    title="Delete contact"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Add Contact Modal */}
+        {showAddContact && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl p-6 w-full max-w-md">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-semibold text-gray-800">Add Emergency Contact</h3>
+                <button
+                  onClick={() => setShowAddContact(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+                  <input
+                    type="text"
+                    value={newContact.name}
+                    onChange={(e) => setNewContact({ ...newContact, name: e.target.value })}
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                    placeholder="Enter contact name"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number *</label>
+                  <input
+                    type="tel"
+                    value={newContact.phone}
+                    onChange={(e) => setNewContact({ ...newContact, phone: e.target.value })}
+                    className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 ${
+                      newContact.phone && !validatePhoneNumber(newContact.phone)
+                        ? 'border-red-300 bg-red-50'
+                        : 'border-gray-300'
+                    }`}
+                    placeholder="+1-555-123-4567"
+                    required
+                  />
+                  {newContact.phone && !validatePhoneNumber(newContact.phone) && (
+                    <p className="text-sm text-red-600 mt-1">Please enter a valid phone number</p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Relationship</label>
+                  <select
+                    value={newContact.relationship}
+                    onChange={(e) => setNewContact({ ...newContact, relationship: e.target.value })}
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  >
+                    <option value="">Select relationship</option>
+                    <option value="Family">Family</option>
+                    <option value="Friend">Friend</option>
+                    <option value="Colleague">Colleague</option>
+                    <option value="Neighbor">Neighbor</option>
+                    <option value="Doctor">Doctor</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    id="isPrimary"
+                    checked={newContact.isPrimary}
+                    onChange={(e) => setNewContact({ ...newContact, isPrimary: e.target.checked })}
+                    className="w-4 h-4 text-red-600 bg-gray-100 border-gray-300 rounded focus:ring-red-500"
+                  />
+                  <label htmlFor="isPrimary" className="ml-2 text-sm text-gray-700">
+                    Set as primary emergency contact
+                  </label>
+                </div>
+              </div>
+
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={() => setShowAddContact(false)}
+                  className="flex-1 bg-gray-500 hover:bg-gray-600 text-white py-3 rounded-lg font-medium transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleAddEmergencyContact}
+                  disabled={!newContact.name || !newContact.phone || !validatePhoneNumber(newContact.phone)}
+                  className="flex-1 bg-red-500 hover:bg-red-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white py-3 rounded-lg font-medium transition-colors"
+                >
+                  Add Contact
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Activity Stats */}

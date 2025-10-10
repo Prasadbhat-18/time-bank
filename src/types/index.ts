@@ -1,3 +1,11 @@
+export interface EmergencyContact {
+  id: string;
+  name: string;
+  phone: string;
+  relationship: string;
+  isPrimary?: boolean;
+}
+
 export interface User {
   id: string;
   email: string;
@@ -7,6 +15,7 @@ export interface User {
   phone?: string;
   location?: string;
   skills?: string[];
+  emergency_contacts?: EmergencyContact[];
   reputation_score: number;
   total_reviews: number;
   created_at: string;
@@ -62,6 +71,11 @@ export interface Booking {
   scheduled_end: string;
   duration_hours: number;
   status: 'pending' | 'confirmed' | 'completed' | 'cancelled';
+  confirmation_status: 'pending' | 'awaiting_provider' | 'provider_confirmed' | 'both_confirmed' | 'confirmed' | 'declined';
+  credits_held?: number; // Credits reserved but not yet transferred
+  credits_transferred?: boolean; // Whether credits have been moved
+  provider_notes?: string; // Notes from provider when confirming/declining
+  confirmed_at?: string;
   created_at: string;
 }
 

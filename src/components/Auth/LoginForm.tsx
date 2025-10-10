@@ -201,7 +201,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onToggleMode }) => {
         </div>
 
         {/* Error Message */}
-        {error && (
+        {error && !error.includes('auth/api-key-not-valid') && (
           <div className="mb-6 p-4 bg-red-900/30 backdrop-blur-sm border-2 border-red-400/50 rounded-xl text-red-300 text-sm animate-shake">
             {error}
           </div>

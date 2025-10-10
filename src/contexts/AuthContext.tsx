@@ -121,16 +121,24 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         saveUserToStorage(officialUser);
       } else if (email.endsWith('@gmail.com') && password.length >= 6) {
         // Allow any Gmail account with a password of at least 6 characters
-        const gmailUser: User = {
-          id: `gmail-${email.replace('@gmail.com', '').replace(/[^a-zA-Z0-9]/g, '')}`,
-          email: email,
-          username: email.split('@')[0].replace(/[^a-zA-Z0-9]/g, '_'),
-          bio: `Gmail user registered with ${email}`,
-          avatar_url: 'https://images.pexels.com/photos/1222271/pexels-photo-1222271.jpeg?auto=compress&cs=tinysrgb&w=200',
-          reputation_score: 5.0,
-          total_reviews: 0,
-          created_at: new Date().toISOString(),
-        };
+        const userId = `gmail-${email.replace('@gmail.com', '').replace(/[^a-zA-Z0-9]/g, '')}`;
+        
+        // Check if user already exists or create new one
+        let gmailUser = await dataService.getUserById(userId);
+        if (!gmailUser) {
+          gmailUser = {
+            id: userId,
+            email: email,
+            username: email.split('@')[0].replace(/[^a-zA-Z0-9]/g, '_'),
+            bio: `Gmail user registered with ${email}`,
+            avatar_url: 'https://images.pexels.com/photos/1222271/pexels-photo-1222271.jpeg?auto=compress&cs=tinysrgb&w=200',
+            reputation_score: 5.0,
+            total_reviews: 0,
+            created_at: new Date().toISOString(),
+          };
+          // Add to dataService's user storage
+          await dataService.createUser(gmailUser);
+        }
         setUser(gmailUser);
         saveUserToStorage(gmailUser);
       } else {

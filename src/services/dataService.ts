@@ -1,4 +1,4 @@
-﻿import { User, Skill, Service, TimeCredit, Booking, Transaction, Review, UserSkill } from '../types';
+﻿import { User, Skill, Service, TimeCredit, Booking, Transaction, Review, UserSkill, EmergencyContact } from '../types';
 import { 
   mockUsers as initialMockUsers, 
   mockSkills, 
@@ -10,7 +10,28 @@ import {
   mockUserSkills as initialMockUserSkills 
 } from './mockData';
 
-// Load data from localStorage or use initial data
+// Firebase imports
+import { db, isFirebaseConfigured } from '../firebase';
+import {
+  doc,
+  getDoc,
+  setDoc,
+  updateDoc,
+  collection,
+  getDocs,
+  addDoc,
+  query,
+  where,
+  orderBy,
+  serverTimestamp,
+  runTransaction,
+  increment
+} from 'firebase/firestore';
+
+// Check if Firebase is available
+const useFirebase = isFirebaseConfigured() && !!db;
+
+// Load data from Firebase or localStorage or use initial data
 const loadFromStorage = <T>(key: string, fallback: T[]): T[] => {
   try {
     const stored = localStorage.getItem(`timebank_${key}`);
@@ -28,6 +49,35 @@ const saveToStorage = <T>(key: string, data: T[]) => {
   }
 };
 
+// Firebase helper functions
+const saveToFirestore = async <T>(collectionName: string, id: string, data: T) => {
+  if (!useFirebase) return;
+  try {
+    await setDoc(doc(db, collectionName, id), {
+      ...data,
+      updated_at: serverTimestamp()
+    });
+  } catch (error) {
+    console.error(`Error saving to Firestore ${collectionName}:`, error);
+  }
+};
+
+const loadFromFirestore = async <T>(collectionName: string): Promise<T[]> => {
+  if (!useFirebase) return [];
+  try {
+    const querySnapshot = await getDocs(collection(db, collectionName));
+    return querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      created_at: doc.data().created_at?.toDate?.()?.toISOString() || doc.data().created_at,
+      updated_at: doc.data().updated_at?.toDate?.()?.toISOString() || doc.data().updated_at
+    })) as T[];
+  } catch (error) {
+    console.error(`Error loading from Firestore ${collectionName}:`, error);
+    return [];
+  }
+};
+
 // Initialize persistent arrays
 let mockUsers = loadFromStorage('users', initialMockUsers);
 let mockServices = loadFromStorage('services', initialMockServices);
@@ -37,9 +87,99 @@ let mockReviews = loadFromStorage('reviews', initialMockReviews);
 let mockTimeCredits = loadFromStorage('time_credits', initialMockTimeCredits);
 let mockUserSkills = loadFromStorage('user_skills', initialMockUserSkills);
 
+// Helper function to add test services for cross-user booking
+const addTestServices = () => {
+  const testServices = [
+    {
+      id: 'test-service-1',
+      provider_id: 'demo-user-1',
+      skill_id: '1',
+      title: 'React Tutorial Session',
+      description: 'Learn React fundamentals with hands-on coding examples.',
+      credits_per_hour: 1.0,
+      status: 'active' as const,
+      type: 'offer' as const,
+      created_at: new Date().toISOString()
+    },
+    {
+      id: 'test-service-2', 
+      provider_id: 'demo-user-2',
+      skill_id: '3',
+      title: 'Home Cooking Basics',
+      description: 'Learn to cook simple, healthy meals at home.',
+      credits_per_hour: 1.0,
+      status: 'active' as const,
+      type: 'offer' as const,
+      created_at: new Date().toISOString()
+    }
+  ];
+
+  // Add test users if they don't exist
+  const testUsers = [
+    {
+      id: 'demo-user-1',
+      email: 'testuser1@example.com',
+      username: 'test_user_1',
+      bio: 'Experienced React developer',
+      reputation_score: 4.5,
+      total_reviews: 8,
+      created_at: new Date().toISOString()
+    },
+    {
+      id: 'demo-user-2',
+      email: 'testuser2@example.com', 
+      username: 'test_user_2',
+      bio: 'Home cooking enthusiast',
+      reputation_score: 4.7,
+      total_reviews: 12,
+      created_at: new Date().toISOString()
+    }
+  ];
+
+  // Add test users if not already present
+  testUsers.forEach(testUser => {
+    if (!mockUsers.find(u => u.id === testUser.id)) {
+      mockUsers.push(testUser);
+    }
+  });
+
+  // Add test services if not already present
+  testServices.forEach(testService => {
+    if (!mockServices.find(s => s.id === testService.id)) {
+      mockServices.push(testService);
+    }
+  });
+
+  // Save to localStorage
+  saveToStorage('users', mockUsers);
+  saveToStorage('services', mockServices);
+};
+
+// Initialize test services
+addTestServices();
+
 export const dataService = {
   async getUserById(userId: string): Promise<User | null> {
     return mockUsers.find(user => user.id === userId) || null;
+  },
+
+  async createUser(user: User): Promise<User> {
+    // Check if user already exists
+    const existingUser = mockUsers.find(u => u.id === user.id);
+    if (existingUser) {
+      return existingUser;
+    }
+    
+    // Add new user
+    mockUsers.push(user);
+    saveToStorage('users', mockUsers);
+    
+    // Save to Firestore if available
+    if (useFirebase) {
+      await saveToFirestore('users', user.id, user);
+    }
+    
+    return user;
   },
 
   async getTimeCredits(userId: string): Promise<TimeCredit | null> {
@@ -193,6 +333,8 @@ export const dataService = {
       ...booking,
       id: Date.now().toString(),
       status: 'pending',
+      confirmation_status: 'awaiting_provider',
+      credits_transferred: false,
       created_at: new Date().toISOString()
     };
 
@@ -206,16 +348,30 @@ export const dataService = {
         throw new Error('Insufficient credits to book this service');
       }
       
-      // Deduct credits immediately upon booking
-      requesterCredits.balance -= requiredCredits;
-      requesterCredits.total_spent += requiredCredits;
+      // Hold credits (reserve but don't transfer yet)
+      newBooking.credits_held = requiredCredits;
+      requesterCredits.balance -= requiredCredits; // Reserve the credits
       requesterCredits.updated_at = new Date().toISOString();
+      
+      // Note: credits_transferred remains false until provider confirms
     }
 
     // Persist in-memory and localStorage
     mockBookings.push(newBooking);
     saveToStorage('bookings', mockBookings);
     saveToStorage('time_credits', mockTimeCredits);
+    
+    // Also save to Firebase if available
+    if (useFirebase) {
+      try {
+        await saveToFirestore('bookings', newBooking.id, newBooking);
+        if (requesterCredits) {
+          await saveToFirestore('time_credits', booking.requester_id, requesterCredits);
+        }
+      } catch (error) {
+        console.error('Failed to save booking to Firebase:', error);
+      }
+    }
     return {
       ...newBooking,
       provider: mockUsers.find(u => u.id === newBooking.provider_id),
@@ -297,7 +453,173 @@ export const dataService = {
     if (idx === -1) throw new Error('User not found');
     const updated = { ...mockUsers[idx], ...updates };
     mockUsers[idx] = updated;
+    
+    // Save to localStorage
     saveToStorage('users', mockUsers);
+    
+    // Also save to Firebase if available
+    if (useFirebase) {
+      try {
+        await saveToFirestore('users', userId, updated);
+      } catch (error) {
+        console.error('Failed to save user to Firebase:', error);
+      }
+    }
+    
     return updated;
+  },
+
+  async confirmBooking(bookingId: string, providerId: string, notes?: string): Promise<Booking> {
+    const idx = mockBookings.findIndex(b => b.id === bookingId);
+    if (idx === -1) throw new Error('Booking not found');
+    
+    const booking = mockBookings[idx];
+    if (booking.provider_id !== providerId) {
+      throw new Error('Only the service provider can confirm this booking');
+    }
+    
+    if (booking.confirmation_status !== 'awaiting_provider') {
+      throw new Error('Booking is not in a confirmable state');
+    }
+
+    // Update booking status
+    const updatedBooking = {
+      ...booking,
+      confirmation_status: 'provider_confirmed' as const,
+      status: 'confirmed' as const,
+      provider_notes: notes,
+      confirmed_at: new Date().toISOString(),
+      credits_transferred: true
+    };
+
+    // Transfer credits from held to provider
+    if (booking.credits_held && !booking.credits_transferred) {
+      const providerCredits = mockTimeCredits.find(tc => tc.user_id === booking.provider_id);
+      if (providerCredits) {
+        providerCredits.balance += booking.credits_held;
+        providerCredits.total_earned += booking.credits_held;
+        providerCredits.updated_at = new Date().toISOString();
+
+        // Create transaction record
+        const transaction = {
+          id: Date.now().toString(),
+          from_user_id: booking.requester_id,
+          to_user_id: booking.provider_id,
+          booking_id: booking.id,
+          amount: booking.credits_held,
+          transaction_type: 'service_completed' as const,
+          description: `Payment for confirmed service booking`,
+          created_at: new Date().toISOString()
+        };
+        mockTransactions.push(transaction);
+        saveToStorage('transactions', mockTransactions);
+      }
+
+      // Update requester's spent credits
+      const requesterCredits = mockTimeCredits.find(tc => tc.user_id === booking.requester_id);
+      if (requesterCredits) {
+        requesterCredits.total_spent += booking.credits_held;
+        requesterCredits.updated_at = new Date().toISOString();
+      }
+    }
+
+    mockBookings[idx] = updatedBooking;
+    saveToStorage('bookings', mockBookings);
+    saveToStorage('time_credits', mockTimeCredits);
+
+    return {
+      ...updatedBooking,
+      provider: mockUsers.find(u => u.id === updatedBooking.provider_id),
+      requester: mockUsers.find(u => u.id === updatedBooking.requester_id),
+      service: mockServices.find(s => s.id === updatedBooking.service_id),
+    } as Booking;
+  },
+
+  async declineBooking(bookingId: string, providerId: string, reason?: string): Promise<Booking> {
+    const idx = mockBookings.findIndex(b => b.id === bookingId);
+    if (idx === -1) throw new Error('Booking not found');
+    
+    const booking = mockBookings[idx];
+    if (booking.provider_id !== providerId) {
+      throw new Error('Only the service provider can decline this booking');
+    }
+    
+    if (booking.confirmation_status !== 'awaiting_provider') {
+      throw new Error('Booking is not in a declinable state');
+    }
+
+    // Update booking status
+    const updatedBooking = {
+      ...booking,
+      confirmation_status: 'declined' as const,
+      status: 'cancelled' as const,
+      provider_notes: reason,
+      credits_transferred: false
+    };
+
+    // Return held credits to requester
+    if (booking.credits_held && !booking.credits_transferred) {
+      const requesterCredits = mockTimeCredits.find(tc => tc.user_id === booking.requester_id);
+      if (requesterCredits) {
+        requesterCredits.balance += booking.credits_held; // Return the held credits
+        requesterCredits.updated_at = new Date().toISOString();
+      }
+    }
+
+    mockBookings[idx] = updatedBooking;
+    saveToStorage('bookings', mockBookings);
+    saveToStorage('time_credits', mockTimeCredits);
+
+    return {
+      ...updatedBooking,
+      provider: mockUsers.find(u => u.id === updatedBooking.provider_id),
+      requester: mockUsers.find(u => u.id === updatedBooking.requester_id),
+      service: mockServices.find(s => s.id === updatedBooking.service_id),
+    } as Booking;
+  },
+
+  // Emergency contacts methods
+  async addEmergencyContact(userId: string, contact: Omit<EmergencyContact, 'id'>): Promise<EmergencyContact> {
+    const user = mockUsers.find(u => u.id === userId);
+    if (!user) throw new Error('User not found');
+
+    const newContact: EmergencyContact = {
+      ...contact,
+      id: Date.now().toString()
+    };
+
+    user.emergency_contacts = user.emergency_contacts || [];
+    user.emergency_contacts.push(newContact);
+    
+    saveToStorage('users', mockUsers);
+    
+    // Also save to Firebase if available
+    if (useFirebase) {
+      try {
+        await saveToFirestore('users', userId, user);
+      } catch (error) {
+        console.error('Failed to save emergency contact to Firebase:', error);
+      }
+    }
+
+    return newContact;
+  },
+
+  async deleteEmergencyContact(userId: string, contactId: string): Promise<void> {
+    const user = mockUsers.find(u => u.id === userId);
+    if (!user) throw new Error('User not found');
+
+    user.emergency_contacts = user.emergency_contacts?.filter(c => c.id !== contactId) || [];
+    
+    saveToStorage('users', mockUsers);
+    
+    // Also save to Firebase if available
+    if (useFirebase) {
+      try {
+        await saveToFirestore('users', userId, user);
+      } catch (error) {
+        console.error('Failed to delete emergency contact from Firebase:', error);
+      }
+    }
   },
 };

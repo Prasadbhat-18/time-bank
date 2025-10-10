@@ -32,6 +32,12 @@ export const ServiceList: React.FC = () => {
       }),
       dataService.getSkills(),
     ]);
+    
+    // Debug log for cross-user booking
+    console.log('Current user:', user?.id, user?.email);
+    console.log('All services:', servicesData.map(s => ({ id: s.id, title: s.title, provider_id: s.provider_id, provider_email: s.provider?.email })));
+    console.log('Services you can book:', servicesData.filter(s => s.provider_id !== user?.id));
+    
     setServices(servicesData);
     setSkills(skillsData);
     setLoading(false);
@@ -182,13 +188,17 @@ export const ServiceList: React.FC = () => {
                         </div>
                       </div>
 
-                      {service.provider_id !== user?.id && (
+                      {service.provider_id !== user?.id ? (
                         <button
                           onClick={() => handleBookService(service)}
                           className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm rounded-lg transition"
                         >
                           Book Now
                         </button>
+                      ) : (
+                        <span className="px-4 py-2 bg-gray-200 text-gray-500 text-sm rounded-lg">
+                          Your Service
+                        </span>
                       )}
                     </div>
                   )}

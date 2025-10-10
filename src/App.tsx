@@ -27,6 +27,8 @@ function AppContent() {
   const [currentView, setCurrentView] = useState<View>('dashboard');
   const { location: userLocation } = useGeolocation();
 
+
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 flex items-center justify-center">

@@ -130,8 +130,14 @@ export const BookingModal: React.FC<BookingModalProps> = ({ service, onClose, on
               <span className="font-medium text-gray-800">{service.credits_per_hour} credit/hour</span>
             </div>
             <div className="border-t border-emerald-200 mt-2 pt-2 flex items-center justify-between">
-              <span className="font-semibold text-gray-800">Total Cost:</span>
+              <span className="font-semibold text-gray-800">Credits to Hold:</span>
               <span className="text-xl font-bold text-emerald-700">{totalCredits} credits</span>
+            </div>
+            <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-sm text-blue-800">
+                <span className="font-medium">💡 Note:</span> Credits will be held (reserved) until the service provider confirms your booking. 
+                If declined, credits will be returned to your balance.
+              </p>
             </div>
           </div>
 
@@ -148,7 +154,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({ service, onClose, on
               disabled={loading}
               className="flex-1 px-6 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? 'Booking...' : 'Confirm Booking'}
+              {loading ? 'Sending Request...' : 'Request Service'}
             </button>
           </div>
         </form>

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Phone, AlertTriangle, X, MapPin, RefreshCw, Shield } from 'lucide-react';
 import { useGeolocation } from '../../hooks/useGeolocation';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface SOSButtonProps {
   userLocation?: { lat: number; lng: number };
@@ -19,19 +20,34 @@ export function SOSButton({ userLocation }: SOSButtonProps) {
   const [countdown, setCountdown] = useState(0);
   const [personalContacts, setPersonalContacts] = useState<EmergencyContact[]>([]);
   
+  // Get user data for emergency contacts
+  const { user } = useAuth();
+  
   // Use enhanced geolocation hook
   const { location, error: locationError, loading: locationLoading, permissionStatus, refreshLocation } = useGeolocation();
   
   // Use precise location from hook, fallback to prop
   const currentLocation = location || userLocation;
 
-  // Load emergency contacts from localStorage
+  // Load emergency contacts from user profile
   useEffect(() => {
-    const savedContacts = localStorage.getItem('emergencyContacts');
-    if (savedContacts) {
-      setPersonalContacts(JSON.parse(savedContacts));
+    if (user?.emergency_contacts) {
+      // Convert user emergency contacts to SOS format
+      const contacts = user.emergency_contacts.map(contact => ({
+        id: contact.id,
+        name: contact.name,
+        phone: contact.phone,
+        relationship: contact.relationship
+      }));
+      setPersonalContacts(contacts);
+    } else {
+      // Fallback to localStorage for backward compatibility
+      const savedContacts = localStorage.getItem('emergencyContacts');
+      if (savedContacts) {
+        setPersonalContacts(JSON.parse(savedContacts));
+      }
     }
-  }, []);
+  }, [user]);
 
   const officialEmergencyContacts = [
     { name: 'Emergency Services', number: '112', type: 'emergency' },

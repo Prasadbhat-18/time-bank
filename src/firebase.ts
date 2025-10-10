@@ -12,28 +12,41 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
-// Check if Firebase config is properly set
+// Check if Firebase config is properly set and valid
 export const isFirebaseConfigured = () => {
-  return !!(
+  const hasConfig = !!(
     import.meta.env.VITE_FIREBASE_API_KEY &&
     import.meta.env.VITE_FIREBASE_PROJECT_ID &&
     import.meta.env.VITE_FIREBASE_API_KEY !== 'your_api_key_here' &&
     import.meta.env.VITE_FIREBASE_PROJECT_ID !== 'your_project_id'
   );
+  
+  // Additional check for demo/fake credentials
+  const isDemo = import.meta.env.VITE_FIREBASE_API_KEY?.includes('Demo') ||
+                 import.meta.env.VITE_FIREBASE_PROJECT_ID?.includes('demo');
+  
+  return hasConfig && !isDemo;
 };
 
 let app: any = null;
 let auth: any = null;
 let db: any = null;
 
+// Only initialize Firebase if we have valid configuration
 if (isFirebaseConfigured()) {
   try {
     app = initializeApp(firebaseConfig);
     auth = getAuth(app);
     db = getFirestore(app);
+    console.log('✅ Firebase initialized successfully');
   } catch (error) {
-    console.warn('Firebase initialization failed, falling back to mock mode:', error);
+    console.warn('⚠️ Firebase initialization failed, using mock mode:', error);
+    app = null;
+    auth = null;
+    db = null;
   }
+} else {
+  console.log('🏪 Firebase not configured, using local storage mode');
 }
 
 export { auth, db };
