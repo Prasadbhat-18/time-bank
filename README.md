@@ -14,7 +14,7 @@ See [FIREBASE_SETUP.md](./FIREBASE_SETUP.md) for detailed instructions, or follo
 
 1. Create a Firebase project at https://console.firebase.google.com
 2. Enable Email/Password Authentication and Firestore Database
-3. Copy your Firebase config and create `.env.local`:
+3. Copy your Firebase config and create `.env.local` (or copy `.env.example` to `.env.local`) and fill values:
 
 ```env
 VITE_FIREBASE_API_KEY=your_api_key
@@ -24,6 +24,15 @@ VITE_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
 VITE_FIREBASE_MESSAGING_SENDER_ID=your_messaging_sender_id
 VITE_FIREBASE_APP_ID=your_app_id
 ```
+
+4. Restart the dev server after adding/updating `.env.local` so Vite picks up the new variables.
+
+Verify it worked:
+- Open the browser console. You should see: `✅ Firebase initialized successfully`.
+- If you see: `🏪 Firebase not configured, using local storage mode`, your `.env.local` is missing or has placeholders.
+
+Security note:
+- `.env.local` is git-ignored (see `.gitignore`), so your secrets won't be committed.
 
 ### 3. Run the App
 ```powershell
