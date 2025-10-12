@@ -59,19 +59,62 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   useEffect(() => {
     if (isFirebaseConfigured() && auth) {
       // Use Firebase authentication
+      let resolved = false;
+      const timeout = window.setTimeout(() => {
+        if (!resolved) {
+          console.warn('Auth state took too long; proceeding in guest mode');
+          setLoading(false);
+        }
+      }, 5000);
+
       const unsub = onAuthStateChanged(auth, async (fbUser: FirebaseUser | null) => {
+        resolved = true;
+        window.clearTimeout(timeout);
         setFirebaseUser(fbUser);
         if (fbUser) {
-          const u = await firebaseService.getCurrentUser(fbUser.uid);
-          setUser(u);
-          saveUserToStorage(u);
+          try {
+            const u = await firebaseService.getCurrentUser(fbUser.uid);
+            if (u) {
+              setUser(u);
+              saveUserToStorage(u);
+            } else {
+              // If Firestore doc missing or unreadable, fall back to minimal profile from auth
+              const minimal: User = {
+                id: fbUser.uid,
+                email: fbUser.email || '',
+                username: fbUser.displayName || (fbUser.email ? fbUser.email.split('@')[0] : 'user'),
+                bio: '',
+                reputation_score: 5.0,
+                total_reviews: 0,
+                created_at: new Date().toISOString(),
+              };
+              setUser(minimal);
+              saveUserToStorage(minimal);
+            }
+          } catch (e) {
+            console.warn('Failed to load Firebase user profile, continuing with auth user only', e);
+            const minimal: User = {
+              id: fbUser.uid,
+              email: fbUser.email || '',
+              username: fbUser.displayName || (fbUser.email ? fbUser.email.split('@')[0] : 'user'),
+              bio: '',
+              reputation_score: 5.0,
+              total_reviews: 0,
+              created_at: new Date().toISOString(),
+            };
+            setUser(minimal);
+            saveUserToStorage(minimal);
+          }
         } else {
           setUser(null);
           saveUserToStorage(null);
         }
         setLoading(false);
       });
-      return () => unsub();
+      return () => {
+        window.clearTimeout(timeout);
+        unsub();
+      };
     } else {
       // Use mock authentication - check localStorage first
       console.log('Firebase not configured, using mock authentication mode');
@@ -96,48 +139,58 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [user?.id]);
 
   const login = async (email: string, password: string) => {
+    // Always support demo accounts locally, even if Firebase is configured
+    if (email === 'demo@timebank.com' && password === 'demo123') {
+      setUser(mockUser);
+      saveUserToStorage(mockUser);
+      return;
+    }
+    if (email === 'official@timebank.com' && password === 'official123') {
+      const officialUser: User = {
+        id: 'official-account',
+        email: 'official@timebank.com',
+        username: 'timebank_official',
+        bio: 'Official TimeBank account offering verified professional services.',
+        avatar_url: 'https://images.pexels.com/photos/3184465/pexels-photo-3184465.jpeg?auto=compress&cs=tinysrgb&w=200',
+        reputation_score: 5.0,
+        total_reviews: 25,
+        created_at: new Date('2024-01-01').toISOString(),
+        phone: '+1-555-0100',
+      };
+      setUser(officialUser);
+      saveUserToStorage(officialUser);
+      return;
+    }
+
     if (isFirebaseConfigured() && auth) {
-      // Use Firebase authentication
-      const user = await firebaseService.login(email, password);
-      if (!user) throw new Error('Invalid credentials');
+      // Use Firebase authentication for non-demo accounts
+      const u = await firebaseService.login(email, password);
+      if (!u) throw new Error('Invalid credentials');
+      setUser(u);
+      saveUserToStorage(u);
     } else {
-      // Use mock authentication - support demo accounts and Gmail addresses
-      if (email === 'demo@timebank.com' && password === 'demo123') {
-        setUser(mockUser);
-        saveUserToStorage(mockUser);
-      } else if (email === 'official@timebank.com' && password === 'official123') {
-        const officialUser: User = {
-          id: 'official-account',
-          email: 'official@timebank.com',
-          username: 'timebank_official',
-          bio: 'Official TimeBank account offering verified professional services.',
-          avatar_url: 'https://images.pexels.com/photos/3184465/pexels-photo-3184465.jpeg?auto=compress&cs=tinysrgb&w=200',
-          reputation_score: 5.0,
-          total_reviews: 25,
-          created_at: new Date('2024-01-01').toISOString(),
-          phone: '+1-555-0100',
-        };
-        setUser(officialUser);
-        saveUserToStorage(officialUser);
-      } else if (email.endsWith('@gmail.com') && password.length >= 6) {
-        // Allow any Gmail account with a password of at least 6 characters
-        const userId = `gmail-${email.replace('@gmail.com', '').replace(/[^a-zA-Z0-9]/g, '')}`;
+      // Mock authentication - support Gmail addresses
+      if (email.endsWith('@gmail.com') && password.length >= 6) {
+        // Create consistent user ID for Gmail accounts
+        const cleanEmail = email.toLowerCase().replace('@gmail.com', '');
+        const userId = `gmail-${cleanEmail.replace(/[^a-zA-Z0-9]/g, '-')}`;
         
-        // Check if user already exists or create new one
         let gmailUser = await dataService.getUserById(userId);
         if (!gmailUser) {
           gmailUser = {
             id: userId,
-            email: email,
-            username: email.split('@')[0].replace(/[^a-zA-Z0-9]/g, '_'),
+            email: email.toLowerCase(),
+            username: cleanEmail.replace(/[^a-zA-Z0-9]/g, '_'),
             bio: `Gmail user registered with ${email}`,
             avatar_url: 'https://images.pexels.com/photos/1222271/pexels-photo-1222271.jpeg?auto=compress&cs=tinysrgb&w=200',
             reputation_score: 5.0,
             total_reviews: 0,
             created_at: new Date().toISOString(),
           };
-          // Add to dataService's user storage
           await dataService.createUser(gmailUser);
+          console.log('Created new Gmail user:', gmailUser);
+        } else {
+          console.log('Found existing Gmail user:', gmailUser);
         }
         setUser(gmailUser);
         saveUserToStorage(gmailUser);
@@ -167,18 +220,26 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           saveUserToStorage(foundUser.user);
         } else {
           // Create a new user for any other phone number
-          const newUser: User = {
-            id: `phone-${Date.now()}`,
-            email: `${phone.replace(/[^0-9]/g, '')}@phone.timebank.com`,
-            phone,
-            username: `user_${phone.slice(-4)}`,
-            bio: `User registered with phone ${phone}`,
-            reputation_score: 5.0,
-            total_reviews: 0,
-            created_at: new Date().toISOString()
-          };
-          setUser(newUser);
-          saveUserToStorage(newUser);
+          const phoneId = `phone-${phone.replace(/[^0-9]/g, '')}`;
+          let existingPhoneUser = await dataService.getUserById(phoneId);
+          if (!existingPhoneUser) {
+            const newUser: User = {
+              id: phoneId,
+              email: `${phone.replace(/[^0-9]/g, '')}@phone.timebank.com`,
+              phone,
+              username: `user_${phone.slice(-4)}`,
+              bio: `User registered with phone ${phone}`,
+              reputation_score: 5.0,
+              total_reviews: 0,
+              created_at: new Date().toISOString()
+            };
+            await dataService.createUser(newUser);
+            setUser(newUser);
+            saveUserToStorage(newUser);
+          } else {
+            setUser(existingPhoneUser);
+            saveUserToStorage(existingPhoneUser);
+          }
         }
       } else {
         throw new Error('Invalid verification code. Please enter a 6-digit code.');
@@ -191,16 +252,21 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       // Use Firebase registration
       await firebaseService.register(email, password, username);
     } else {
-      // Mock registration - just log the user in
+      // Mock registration - create consistent user ID
+      const userId = email.endsWith('@gmail.com') 
+        ? `gmail-${email.toLowerCase().replace('@gmail.com', '').replace(/[^a-zA-Z0-9]/g, '-')}`
+        : `user-${Date.now()}`;
+        
       const newUser: User = {
-        id: Date.now().toString(),
-        email,
+        id: userId,
+        email: email.toLowerCase(),
         username,
         bio: 'New TimeBank user',
-        reputation_score: 0,
+        reputation_score: 5.0,
         total_reviews: 0,
         created_at: new Date().toISOString()
       };
+      await dataService.createUser(newUser);
       setUser(newUser);
       saveUserToStorage(newUser);
     }
@@ -213,8 +279,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } else {
       // Mock phone registration - accept any 6-digit code
       if (code.length === 6 && /^\d{6}$/.test(code)) {
+        const phoneId = `phone-${phone.replace(/[^0-9]/g, '')}`;
         const newUser: User = {
-          id: `phone-${Date.now()}`,
+          id: phoneId,
           email: `${phone.replace(/[^0-9]/g, '')}@phone.timebank.com`,
           phone,
           username,
@@ -223,6 +290,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           total_reviews: 0,
           created_at: new Date().toISOString()
         };
+        await dataService.createUser(newUser);
         setUser(newUser);
         saveUserToStorage(newUser);
       } else {
@@ -233,8 +301,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const loginWithGoogle = async () => {
     if (isFirebaseConfigured() && auth) {
-      // Firebase Google authentication would go here
-      throw new Error('Google authentication not implemented for Firebase yet');
+      // Use Firebase Google authentication
+      const u = await firebaseService.loginWithGoogle();
+      setUser(u);
+      saveUserToStorage(u);
     } else {
       // Mock Google authentication - simulate OAuth flow
       return new Promise<void>((resolve, reject) => {
@@ -315,24 +385,33 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         `);
 
         // Listen for auth result
-        const handleMessage = (event: MessageEvent) => {
+        const handleMessage = async (event: MessageEvent) => {
           if (event.data.type === 'GOOGLE_AUTH_SUCCESS') {
             const { user: googleUser } = event.data;
             
             // Create TimeBank user from Google account
-            const newUser: User = {
-              id: `google-${Date.now()}`,
-              email: googleUser.email,
-              username: googleUser.name.replace(/\s+/g, '_').toLowerCase(),
-              bio: `TimeBank user authenticated with Google account`,
-              avatar_url: googleUser.picture,
-              reputation_score: 5.0,
-              total_reviews: 0,
-              created_at: new Date().toISOString()
-            };
+            const cleanEmail = googleUser.email.toLowerCase().replace('@gmail.com', '');
+            const googleUserId = `google-${cleanEmail.replace(/[^a-zA-Z0-9]/g, '-')}`;
             
-            setUser(newUser);
-            saveUserToStorage(newUser);
+            let existingGoogleUser = await dataService.getUserById(googleUserId);
+            if (!existingGoogleUser) {
+              const newUser: User = {
+                id: googleUserId,
+                email: googleUser.email.toLowerCase(),
+                username: googleUser.name.replace(/\s+/g, '_').toLowerCase(),
+                bio: `TimeBank user authenticated with Google account`,
+                avatar_url: googleUser.picture,
+                reputation_score: 5.0,
+                total_reviews: 0,
+                created_at: new Date().toISOString()
+              };
+              await dataService.createUser(newUser);
+              setUser(newUser);
+              saveUserToStorage(newUser);
+            } else {
+              setUser(existingGoogleUser);
+              saveUserToStorage(existingGoogleUser);
+            }
             window.removeEventListener('message', handleMessage);
             resolve();
           }
@@ -355,10 +434,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const logout = () => {
     if (isFirebaseConfigured() && auth) {
       firebaseService.logout().catch(() => {});
-    } else {
-      setUser(null);
-      saveUserToStorage(null);
     }
+    setUser(null);
+    saveUserToStorage(null);
   };
 
   const updateUser = async (updates: Partial<User>) => {

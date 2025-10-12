@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { LogIn, Eye, EyeOff, Clock, Lock, Mail, Phone, Timer } from 'lucide-react';
+import { auth, db, isFirebaseConfigured } from '../../firebase';
 
 interface LoginFormProps {
   onToggleMode: () => void;
@@ -76,7 +77,29 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onToggleMode }) => {
         await loginWithPhone(phone, verificationCode);
       }
     } catch (err: any) {
-      setError(err.message || 'Authentication failed');
+      // Normalize Firebase auth errors
+      const msg = typeof err?.message === 'string' ? err.message : 'Authentication failed';
+      const code = (err?.code as string) || '';
+      // Common Firebase email/password errors
+      if (code === 'auth/user-not-found') {
+        setError('No account found for this email. Please register first.');
+      } else if (code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
+        setError('Incorrect password. Please try again.');
+      } else if (code === 'auth/invalid-email') {
+        setError('Invalid email format.');
+      } else if (msg.includes('auth/operation-not-allowed')) {
+        setError('Sign-in method is disabled in Firebase Auth. Enable it in Firebase Console > Authentication > Sign-in method.');
+      } else if (msg.includes('auth/popup-blocked')) {
+        setError('Popup blocked by the browser. Allow popups for this site or try again.');
+      } else if (msg.includes('auth/popup-closed-by-user')) {
+        setError('The sign-in popup was closed before completing. Please try again.');
+      } else if (msg.includes('auth/invalid-api-key') || msg.includes('auth/api-key-not-valid')) {
+        setError('Invalid or restricted Firebase API key. Verify VITE_FIREBASE_API_KEY in .env.local matches your Firebase Web App config.');
+      } else if (msg.includes('Firebase: Error (auth/')) {
+        setError(msg.replace('Firebase: Error ', ''));
+      } else {
+        setError(msg);
+      }
     } finally {
       setLoading(false);
     }
@@ -198,6 +221,12 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onToggleMode }) => {
             TimeBank
           </h2>
           <p className="text-white/80 text-center text-base font-medium">Every moment counts • Exchange skills in time ⏰</p>
+          {/* Backend status badge */}
+          <div className="mt-2">
+            <span className={`text-xs px-2 py-1 rounded border ${isFirebaseConfigured() && auth && db ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/40' : 'bg-yellow-500/20 text-yellow-200 border-yellow-400/40'}`}>
+              Backend: {isFirebaseConfigured() && auth && db ? 'Firebase' : 'Local'}
+            </span>
+          </div>
         </div>
 
         {/* Error Message */}

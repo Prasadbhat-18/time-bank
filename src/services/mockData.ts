@@ -245,6 +245,7 @@ export const mockBookings: Booking[] = [
     scheduled_end: new Date('2024-04-05T16:00:00').toISOString(),
     duration_hours: 2.0,
     status: 'confirmed',
+    confirmation_status: 'provider_confirmed',
     created_at: new Date('2024-03-25').toISOString(),
   },
   {
@@ -256,6 +257,7 @@ export const mockBookings: Booking[] = [
     scheduled_end: new Date('2024-03-28T12:00:00').toISOString(),
     duration_hours: 2.0,
     status: 'completed',
+    confirmation_status: 'both_confirmed',
     created_at: new Date('2024-03-20').toISOString(),
   },
   {
@@ -267,6 +269,7 @@ export const mockBookings: Booking[] = [
     scheduled_end: new Date('2024-04-10T17:00:00').toISOString(),
     duration_hours: 2.0,
     status: 'pending',
+    confirmation_status: 'awaiting_provider',
     created_at: new Date('2024-03-28').toISOString(),
   },
 ];

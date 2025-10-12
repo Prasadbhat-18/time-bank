@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { X, Calendar, Clock } from 'lucide-react';
-import { Service } from '../../types';
+import { X, Calendar, Clock, MessageCircle } from 'lucide-react';
+import { Service, ChatConversation } from '../../types';
 import { dataService } from '../../services/dataService';
+import { ChatModal } from '../Chat/ChatModal';
 
 interface BookingModalProps {
   service: Service;
@@ -17,19 +18,53 @@ export const BookingModal: React.FC<BookingModalProps> = ({ service, onClose, on
   const [duration, setDuration] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showChat, setShowChat] = useState(false);
+  const [conversation, setConversation] = useState<ChatConversation | null>(null);
+
+  const handleChatWithProvider = async () => {
+    if (!user || !service.provider_id) return;
+
+    try {
+      const newConversation = await dataService.createConversation({
+        service_id: service.id,
+        participants: [user.id, service.provider_id],
+        title: `Chat: ${service.title}`,
+        service: service,
+      });
+
+      setConversation(newConversation);
+      setShowChat(true);
+    } catch (error) {
+      console.error('Error creating conversation:', error);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
 
+    console.log('=== BOOKING ATTEMPT ===');
+    console.log('User trying to book:', { id: user.id, email: user.email, username: user.username });
+    console.log('Service details:', { id: service.id, title: service.title, provider_id: service.provider_id, provider_email: service.provider?.email });
+    console.log('Are they the same user?', user.id === service.provider_id);
+
+    if (user.id === service.provider_id) {
+      setError('You cannot book your own service!');
+      setLoading(false);
+      return;
+    }
+
     setError('');
     setLoading(true);
 
     try {
+      if (!date || !startTime) {
+        throw new Error('Please select both date and start time');
+      }
       const scheduledStart = new Date(`${date}T${startTime}`);
       const scheduledEnd = new Date(scheduledStart.getTime() + duration * 60 * 60 * 1000);
 
-      await dataService.createBooking({
+      console.log('Creating booking with data:', {
         service_id: service.id,
         provider_id: service.provider_id,
         requester_id: user.id,
@@ -38,6 +73,28 @@ export const BookingModal: React.FC<BookingModalProps> = ({ service, onClose, on
         duration_hours: duration,
       });
 
+      const booking = await dataService.createBooking({
+        service_id: service.id,
+        provider_id: service.provider_id,
+        requester_id: user.id,
+        scheduled_start: scheduledStart.toISOString(),
+        scheduled_end: scheduledEnd.toISOString(),
+        duration_hours: duration,
+      });
+
+      console.log('Booking created successfully:', booking);
+
+      // Create a conversation for this booking
+      const newConversation = await dataService.createConversation({
+        service_id: service.id,
+        booking_id: booking.id,
+        participants: [user.id, service.provider_id],
+        title: `Chat: ${service.title}`,
+        service: service,
+        booking: booking,
+      });
+
+      setConversation(newConversation);
       onBooked();
     } catch (err: any) {
       setError(err.message || 'Failed to create booking. Please try again.');
@@ -136,7 +193,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({ service, onClose, on
             <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
               <p className="text-sm text-blue-800">
                 <span className="font-medium">💡 Note:</span> Credits will be held (reserved) until the service provider confirms your booking. 
-                If declined, credits will be returned to your balance.
+                If declined, credits will be returned to your balance. You can chat with the provider to discuss terms and details.
               </p>
             </div>
           </div>
@@ -150,6 +207,14 @@ export const BookingModal: React.FC<BookingModalProps> = ({ service, onClose, on
               Cancel
             </button>
             <button
+              type="button"
+              onClick={handleChatWithProvider}
+              className="px-6 py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition flex items-center gap-2"
+            >
+              <MessageCircle className="w-4 h-4" />
+              Chat First
+            </button>
+            <button
               type="submit"
               disabled={loading}
               className="flex-1 px-6 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
@@ -159,6 +224,21 @@ export const BookingModal: React.FC<BookingModalProps> = ({ service, onClose, on
           </div>
         </form>
       </div>
+
+      {/* Chat Modal */}
+      {showChat && conversation && (
+        <ChatModal
+          conversation={conversation}
+          onClose={() => setShowChat(false)}
+          onMessageSent={async (message) => {
+            await dataService.sendMessage(message);
+          }}
+          onTermsAgreed={async (termsContent) => {
+            await dataService.agreeToTerms(conversation.id, termsContent);
+            setShowChat(false);
+          }}
+        />
+      )}
     </div>
   );
 };

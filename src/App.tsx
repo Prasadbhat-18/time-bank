@@ -7,6 +7,7 @@ import { ProfileView } from './components/Profile/ProfileView';
 import { WalletView } from './components/Wallet/WalletView';
 import { ServiceList } from './components/Services/ServiceList';
 import { BookingList } from './components/Bookings/BookingList';
+import { ChatList } from './components/Chat/ChatList';
 import { SOSButton } from './components/SOS/SOSButton';
 import { useGeolocation } from './hooks/useGeolocation';
 import {
@@ -17,9 +18,10 @@ import {
   Calendar,
   LogOut,
   Clock,
+  MessageCircle,
 } from 'lucide-react';
 
-type View = 'dashboard' | 'profile' | 'wallet' | 'services' | 'bookings';
+type View = 'dashboard' | 'profile' | 'wallet' | 'services' | 'bookings' | 'chat';
 
 function AppContent() {
   const { user, loading, logout } = useAuth();
@@ -91,6 +93,7 @@ function AppContent() {
     { id: 'dashboard' as View, label: 'Dashboard', icon: LayoutDashboard },
     { id: 'services' as View, label: 'Services', icon: Briefcase },
     { id: 'bookings' as View, label: 'Bookings', icon: Calendar },
+    { id: 'chat' as View, label: 'Chat', icon: MessageCircle },
     { id: 'wallet' as View, label: 'Wallet', icon: Wallet },
     { id: 'profile' as View, label: 'Profile', icon: User },
   ];
@@ -184,6 +187,7 @@ function AppContent() {
         {currentView === 'wallet' && <WalletView />}
         {currentView === 'services' && <ServiceList />}
         {currentView === 'bookings' && <BookingList />}
+        {currentView === 'chat' && <ChatList />}
       </main>
 
       <footer className="bg-white border-t border-gray-200 mt-12">

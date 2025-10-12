@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { getFirestore, initializeFirestore } from 'firebase/firestore';
 
 // Firebase config is read from Vite env vars. Create a .env.local with VITE_FIREBASE_... values.
 const firebaseConfig = {
@@ -37,8 +37,20 @@ if (isFirebaseConfigured()) {
   try {
     app = initializeApp(firebaseConfig);
     auth = getAuth(app);
-    db = getFirestore(app);
-    console.log('✅ Firebase initialized successfully');
+    // Use initializeFirestore with auto-detected long polling to avoid 400 errors in some networks
+    try {
+      db = initializeFirestore(app, {
+        experimentalAutoDetectLongPolling: true,
+        useFetchStreams: false,
+      } as any);
+    } catch {
+      // Fallback to default Firestore if initializeFirestore options not supported
+      db = getFirestore(app);
+    }
+    console.log('✅ Firebase initialized successfully', {
+      projectId: firebaseConfig.projectId,
+      authDomain: firebaseConfig.authDomain,
+    });
   } catch (error) {
     console.warn('⚠️ Firebase initialization failed, using mock mode:', error);
     app = null;

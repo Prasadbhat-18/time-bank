@@ -18,6 +18,12 @@ export const ServiceList: React.FC = () => {
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [selectedService, setSelectedService] = useState<Service | null>(null);
 
+  // Reset demo data: clear localStorage and reload
+  const handleResetDemoData = () => {
+    localStorage.clear();
+    window.location.reload();
+  };
+
   useEffect(() => {
     loadData();
   }, [filterType, filterCategory, searchTerm]);
@@ -34,9 +40,19 @@ export const ServiceList: React.FC = () => {
     ]);
     
     // Debug log for cross-user booking
-    console.log('Current user:', user?.id, user?.email);
-    console.log('All services:', servicesData.map(s => ({ id: s.id, title: s.title, provider_id: s.provider_id, provider_email: s.provider?.email })));
-    console.log('Services you can book:', servicesData.filter(s => s.provider_id !== user?.id));
+    console.log('=== SERVICE LIST DEBUG ===');
+    console.log('Current user:', { id: user?.id, email: user?.email, username: user?.username });
+    console.log('Total services loaded:', servicesData.length);
+    console.log('All services:', servicesData.map(s => ({ 
+      id: s.id, 
+      title: s.title, 
+      provider_id: s.provider_id, 
+      provider_email: s.provider?.email,
+      provider_username: s.provider?.username,
+      isOwnService: s.provider_id === user?.id
+    })));
+    console.log('Services you can book (not your own):', servicesData.filter(s => s.provider_id !== user?.id).length);
+    console.log('Your own services:', servicesData.filter(s => s.provider_id === user?.id).length);
     
     setServices(servicesData);
     setSkills(skillsData);
@@ -52,6 +68,12 @@ export const ServiceList: React.FC = () => {
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
+      <button
+        onClick={handleResetDemoData}
+        style={{ marginBottom: 16, background: '#f87171', color: 'white', padding: '8px 16px', borderRadius: 6 }}
+      >
+        Reset Demo Data
+      </button>
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-800">Service Marketplace</h1>
@@ -118,36 +140,57 @@ export const ServiceList: React.FC = () => {
               <p>No services found matching your criteria</p>
             </div>
           ) : (
-            services.map((service) => (
-              <div
-                key={service.id}
-                className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden hover:shadow-xl transition group"
-              >
+            services.map((service) => {
+              const isOwnService = service.provider_id === user?.id;
+              return (
                 <div
-                  className={`h-2 ${
-                    service.type === 'offer'
-                      ? 'bg-gradient-to-r from-emerald-500 to-teal-600'
-                      : 'bg-gradient-to-r from-blue-500 to-cyan-600'
+                  key={service.id}
+                  className={`bg-white rounded-2xl shadow-lg border overflow-hidden transition group ${
+                    isOwnService 
+                      ? 'border-gray-200 opacity-60 hover:opacity-75' 
+                      : 'border-gray-100 hover:shadow-xl hover:border-emerald-200'
                   }`}
-                ></div>
+                >
+                  <div
+                    className={`h-2 ${
+                      service.type === 'offer'
+                        ? 'bg-gradient-to-r from-emerald-500 to-teal-600'
+                        : 'bg-gradient-to-r from-blue-500 to-cyan-600'
+                    } ${isOwnService ? 'opacity-50' : ''}`}
+                  ></div>
 
-                <div className="p-6">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex-1">
-                      <span
-                        className={`text-xs font-medium px-2.5 py-1 rounded-full ${
-                          service.type === 'offer'
-                            ? 'bg-emerald-100 text-emerald-700'
-                            : 'bg-blue-100 text-blue-700'
-                        }`}
-                      >
-                        {service.type === 'offer' ? 'Service Offered' : 'Service Needed'}
-                      </span>
-                      <h3 className="text-lg font-semibold text-gray-800 mt-2 group-hover:text-emerald-600 transition">
-                        {service.title}
-                      </h3>
+                  <div className="p-6 relative">
+                    {isOwnService && (
+                      <div className="absolute top-4 right-4 bg-gray-100 text-gray-500 px-2 py-1 rounded text-xs font-medium">
+                        Your Service
+                      </div>
+                    )}
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex-1 pr-16">
+                        <span
+                          className={`text-xs font-medium px-2.5 py-1 rounded-full ${
+                            service.type === 'offer'
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : 'bg-blue-100 text-blue-700'
+                          }`}
+                        >
+                          {service.type === 'offer' ? 'Service Offered' : 'Service Needed'}
+                        </span>
+                        <h3 className={`text-lg font-semibold mt-2 transition ${
+                          isOwnService 
+                            ? 'text-gray-500' 
+                            : 'text-gray-800 group-hover:text-emerald-600'
+                        }`}>
+                          {service.title}
+                        </h3>
+                      </div>
+                  <button
+                    onClick={handleResetDemoData}
+                    style={{ marginBottom: 16, background: '#f87171', color: 'white', padding: '8px 16px', borderRadius: 6 }}
+                  >
+                    Reset Demo Data
+                  </button>
                     </div>
-                  </div>
 
                   <p className="text-gray-600 text-sm mb-4 line-clamp-3">{service.description}</p>
 
@@ -163,48 +206,50 @@ export const ServiceList: React.FC = () => {
                     )}
                   </div>
 
-                  {service.provider && (
-                    <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden">
-                          {service.provider.avatar_url ? (
-                            <img
-                              src={service.provider.avatar_url}
-                              alt={service.provider.username}
-                              className="w-full h-full object-cover"
-                            />
-                          ) : (
-                            <User className="w-5 h-5 text-gray-400" />
-                          )}
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium text-gray-800">{service.provider.username}</p>
-                          <div className="flex items-center gap-1">
-                            <Star className="w-3 h-3 text-amber-500 fill-amber-500" />
-                            <span className="text-xs text-gray-600">
-                              {service.provider.reputation_score.toFixed(1)}
-                            </span>
-                          </div>
+                  <div className="flex items-center justify-between pt-4 border-t border-gray-100">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden">
+                        {service.provider?.avatar_url ? (
+                          <img
+                            src={service.provider.avatar_url}
+                            alt={service.provider?.username || 'Provider'}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <User className="w-5 h-5 text-gray-400" />
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-800">{service.provider?.username || 'Community Member'}</p>
+                        <div className="flex items-center gap-1">
+                          <Star className="w-3 h-3 text-amber-500 fill-amber-500" />
+                          <span className="text-xs text-gray-600">
+                            {(service.provider?.reputation_score ?? 5.0).toFixed(1)}
+                          </span>
                         </div>
                       </div>
+                    </div>
 
-                      {service.provider_id !== user?.id ? (
-                        <button
-                          onClick={() => handleBookService(service)}
-                          className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm rounded-lg transition"
-                        >
-                          Book Now
-                        </button>
-                      ) : (
-                        <span className="px-4 py-2 bg-gray-200 text-gray-500 text-sm rounded-lg">
+                    {service.provider_id !== user?.id ? (
+                      <button
+                        onClick={() => handleBookService(service)}
+                        className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm rounded-lg transition focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2"
+                      >
+                        Book Now
+                      </button>
+                    ) : (
+                      <div className="flex flex-col items-end">
+                        <span className="px-4 py-2 bg-gray-100 text-gray-400 text-sm rounded-lg cursor-not-allowed border border-gray-200">
                           Your Service
                         </span>
-                      )}
-                    </div>
-                  )}
+                        <span className="text-xs text-gray-400 mt-1">Cannot book own service</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-            ))
+              );
+            })
           )}
         </div>
       )}

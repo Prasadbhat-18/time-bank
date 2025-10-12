@@ -1,4 +1,4 @@
-﻿import { User, Skill, Service, TimeCredit, Booking, Transaction, Review, UserSkill, EmergencyContact } from '../types';
+﻿import { User, Skill, Service, TimeCredit, Booking, Transaction, Review, UserSkill, EmergencyContact, ChatMessage, ChatConversation } from '../types';
 import { 
   mockUsers as initialMockUsers, 
   mockSkills, 
@@ -12,24 +12,10 @@ import {
 
 // Firebase imports
 import { db, isFirebaseConfigured } from '../firebase';
-import {
-  doc,
-  getDoc,
-  setDoc,
-  updateDoc,
-  collection,
-  getDocs,
-  addDoc,
-  query,
-  where,
-  orderBy,
-  serverTimestamp,
-  runTransaction,
-  increment
-} from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 
 // Check if Firebase is available
-const useFirebase = isFirebaseConfigured() && !!db;
+let useFirebase = isFirebaseConfigured() && !!db;
 
 // Load data from Firebase or localStorage or use initial data
 const loadFromStorage = <T>(key: string, fallback: T[]): T[] => {
@@ -59,24 +45,16 @@ const saveToFirestore = async <T>(collectionName: string, id: string, data: T) =
     });
   } catch (error) {
     console.error(`Error saving to Firestore ${collectionName}:`, error);
+    // If we hit a permission or unavailable error, turn off Firebase usage to avoid noisy failures
+    const message = String(error);
+    if (message.includes('permission') || message.includes('PERMISSION') || message.includes('unavailable') || message.includes('FAILED_PRECONDITION')) {
+      useFirebase = false;
+      console.warn('Disabling Firestore writes for this session due to errors. Falling back to local storage only.');
+    }
   }
 };
 
-const loadFromFirestore = async <T>(collectionName: string): Promise<T[]> => {
-  if (!useFirebase) return [];
-  try {
-    const querySnapshot = await getDocs(collection(db, collectionName));
-    return querySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      created_at: doc.data().created_at?.toDate?.()?.toISOString() || doc.data().created_at,
-      updated_at: doc.data().updated_at?.toDate?.()?.toISOString() || doc.data().updated_at
-    })) as T[];
-  } catch (error) {
-    console.error(`Error loading from Firestore ${collectionName}:`, error);
-    return [];
-  }
-};
+// Note: We previously had a loadFromFirestore helper, but it's unused in the current mock-first flow.
 
 // Initialize persistent arrays
 let mockUsers = loadFromStorage('users', initialMockUsers);
@@ -280,18 +258,40 @@ export const dataService = {
   async createService(service: Omit<Service, 'id' | 'created_at'>): Promise<Service> {
     const newService: Service = {
       ...service,
-      id: Date.now().toString(),
+      id: `service-${Date.now()}`,
       created_at: new Date().toISOString()
     };
+    
+    console.log('=== CREATING SERVICE ===');
+    console.log('Service data:', newService);
+    console.log('Provider exists in users:', !!mockUsers.find(u => u.id === service.provider_id));
+    console.log('All users:', mockUsers.map(u => ({ id: u.id, email: u.email, username: u.username })));
+    
     // Persist in-memory and localStorage
     mockServices.push(newService);
     saveToStorage('services', mockServices);
+    
+    console.log('Service created and saved. Total services now:', mockServices.length);
+    
     // Return enriched
-    return {
+    const enrichedService = {
       ...newService,
       provider: mockUsers.find(u => u.id === newService.provider_id),
       skill: mockSkills.find(sk => sk.id === newService.skill_id),
     } as Service;
+    
+    console.log('Enriched service:', enrichedService);
+    
+    if (useFirebase) {
+      try {
+        await saveToFirestore('services', newService.id, newService);
+        console.log('Service also saved to Firebase');
+      } catch (error) {
+        console.error('Failed to save service to Firebase:', error);
+      }
+    }
+    
+    return enrichedService;
   },
 
   async updateService(serviceId: string, updates: Partial<Service>): Promise<Service> {
@@ -328,7 +328,19 @@ export const dataService = {
     })) as Booking[];
   },
 
-  async createBooking(booking: Omit<Booking, 'id' | 'created_at' | 'status'>): Promise<Booking> {
+  async createBooking(
+    booking: Omit<
+      Booking,
+      | 'id'
+      | 'created_at'
+      | 'status'
+      | 'confirmation_status'
+      | 'credits_transferred'
+      | 'credits_held'
+      | 'provider_notes'
+      | 'confirmed_at'
+    >
+  ): Promise<Booking> {
     const newBooking: Booking = {
       ...booking,
       id: Date.now().toString(),
@@ -621,5 +633,108 @@ export const dataService = {
         console.error('Failed to delete emergency contact from Firebase:', error);
       }
     }
+  },
+
+  // Chat and conversation methods
+  async createConversation(conversation: Omit<ChatConversation, 'id' | 'created_at' | 'updated_at'>): Promise<ChatConversation> {
+    const newConversation: ChatConversation = {
+      ...conversation,
+      id: Date.now().toString(),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    // Store conversations in memory (in a real app, this would persist to localStorage/Firebase)
+    const conversations = loadFromStorage<ChatConversation>('conversations', []);
+    conversations.push(newConversation);
+    saveToStorage('conversations', conversations);
+
+    if (useFirebase) {
+      try {
+        await saveToFirestore('conversations', newConversation.id, newConversation);
+      } catch (error) {
+        console.error('Failed to save conversation to Firebase:', error);
+      }
+    }
+
+    return newConversation;
+  },
+
+  async getConversations(userId: string): Promise<ChatConversation[]> {
+    const conversations = loadFromStorage<ChatConversation>('conversations', []);
+    return conversations.filter((conv: ChatConversation) => 
+      conv.participants.includes(userId)
+    );
+  },
+
+  async sendMessage(message: Omit<ChatMessage, 'id' | 'created_at'>): Promise<ChatMessage> {
+    const newMessage: ChatMessage = {
+      ...message,
+      id: Date.now().toString(),
+      created_at: new Date().toISOString(),
+    };
+
+    // Store messages in memory
+    const messages = loadFromStorage<ChatMessage>('chat_messages', []);
+    messages.push(newMessage);
+    saveToStorage('chat_messages', messages);
+
+    // Update conversation's last message and updated_at
+    const conversations = loadFromStorage<ChatConversation>('conversations', []);
+    const convIndex = conversations.findIndex((conv: ChatConversation) => 
+      conv.id === message.conversation_id
+    );
+    if (convIndex !== -1) {
+      conversations[convIndex].last_message = newMessage;
+      conversations[convIndex].updated_at = new Date().toISOString();
+      saveToStorage('conversations', conversations);
+    }
+
+    if (useFirebase) {
+      try {
+        await saveToFirestore('chat_messages', newMessage.id, newMessage);
+        if (convIndex !== -1) {
+          await saveToFirestore('conversations', conversations[convIndex].id, conversations[convIndex]);
+        }
+      } catch (error) {
+        console.error('Failed to save message to Firebase:', error);
+      }
+    }
+
+    return newMessage;
+  },
+
+  async getMessages(conversationId: string): Promise<ChatMessage[]> {
+    const messages = loadFromStorage<ChatMessage>('chat_messages', []);
+    return messages
+      .filter((msg: ChatMessage) => msg.conversation_id === conversationId)
+      .sort((a: ChatMessage, b: ChatMessage) => 
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      );
+  },
+
+  async agreeToTerms(conversationId: string, termsContent: string): Promise<ChatConversation> {
+    const conversations = loadFromStorage<ChatConversation>('conversations', []);
+    const convIndex = conversations.findIndex((conv: ChatConversation) => 
+      conv.id === conversationId
+    );
+    
+    if (convIndex === -1) throw new Error('Conversation not found');
+
+    conversations[convIndex].terms_agreed = true;
+    conversations[convIndex].terms_content = termsContent;
+    conversations[convIndex].updated_at = new Date().toISOString();
+    
+    saveToStorage('conversations', conversations);
+
+    if (useFirebase) {
+      try {
+        await saveToFirestore('conversations', conversationId, conversations[convIndex]);
+      } catch (error) {
+        console.error('Failed to update conversation terms in Firebase:', error);
+      }
+    }
+
+    return conversations[convIndex];
   },
 };

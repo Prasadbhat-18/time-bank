@@ -9,6 +9,7 @@ import {
   Users,
   ArrowRight,
   HelpCircle,
+  MessageCircle,
 } from 'lucide-react';
 import { TimeCredit, Booking, Service, Review } from '../../types';
 import { dataService } from '../../services/dataService';
@@ -319,15 +320,21 @@ export const DashboardView: React.FC = () => {
 
         <div className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-2xl p-6 border border-blue-100">
           <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
-            <Users className="w-5 h-5 text-blue-600" />
-            Community Impact
+            <MessageCircle className="w-5 h-5 text-blue-600" />
+            Chat & Communication
           </h3>
-          <div className="space-y-2 text-sm text-gray-600">
-            <p>You're making a difference in the TimeBank community!</p>
-            <p className="text-xs">
-              Every service exchange strengthens our skill-sharing network and helps build a more
-              collaborative society.
+          <div className="space-y-3">
+            <p className="text-sm text-gray-600">
+              Chat with service providers to discuss terms and agree on details before booking.
             </p>
+            <a
+              href="/chat"
+              className="inline-flex items-center gap-2 text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors"
+            >
+              <MessageCircle className="w-4 h-4" />
+              View Conversations
+              <ArrowRight className="w-4 h-4" />
+            </a>
           </div>
         </div>
       </div>

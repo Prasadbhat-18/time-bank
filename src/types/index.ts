@@ -103,3 +103,29 @@ export interface Review {
   comment: string;
   created_at: string;
 }
+
+export interface ChatMessage {
+  id: string;
+  conversation_id: string;
+  sender_id: string;
+  sender?: User;
+  content: string;
+  message_type: 'text' | 'terms_proposal' | 'terms_agreement' | 'system';
+  is_ai_generated?: boolean;
+  created_at: string;
+}
+
+export interface ChatConversation {
+  id: string;
+  service_id?: string;
+  service?: Service;
+  booking_id?: string;
+  booking?: Booking;
+  participants: string[]; // Array of user IDs
+  title: string;
+  last_message?: ChatMessage;
+  terms_agreed?: boolean;
+  terms_content?: string;
+  created_at: string;
+  updated_at: string;
+}
