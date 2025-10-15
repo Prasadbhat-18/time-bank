@@ -1,6 +1,6 @@
 ﻿import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { Camera, Edit, Save, X, User, Mail, Phone, MapPin, Award, Clock, Shield, Plus, Trash2, PhoneCall } from 'lucide-react';
+import { Camera, Edit, Save, X, User, Mail, Phone, MapPin, Award, Clock, Shield, Plus, Trash2, PhoneCall, Lock } from 'lucide-react';
 import { EmergencyContact } from '../../types';
 
 export const ProfileView: React.FC = () => {
@@ -26,6 +26,14 @@ export const ProfileView: React.FC = () => {
     relationship: '',
     isPrimary: false
   });
+  // Change password UI state
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [pwMessage, setPwMessage] = useState('');
+  const [pwError, setPwError] = useState('');
+  const [pwLoading, setPwLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Load profile picture when user changes
@@ -128,6 +136,36 @@ export const ProfileView: React.FC = () => {
       location: user?.location || ''
     });
     setEditing(false);
+  };
+
+  const handlePasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPwError(''); setPwMessage('');
+    if (newPassword.length < 6) { setPwError('New password must be at least 6 characters'); return; }
+    if (newPassword !== confirmPassword) { setPwError('Passwords do not match'); return; }
+    try {
+      setPwLoading(true);
+      // In mock mode we stored credentials; we can call resetPassword from context
+      // We'll import resetPassword via useAuth (extend hook return) — fallback: direct localStorage update
+      const auth: any = (useAuth as any)();
+      if (!user) throw new Error('No user context');
+      if (auth.resetPassword) {
+        await auth.resetPassword(user.email, newPassword);
+      } else {
+        // Fallback update local creds
+        const raw = localStorage.getItem('timebank_creds');
+        if (raw) {
+          const creds = JSON.parse(raw);
+          if (!creds[user.email.toLowerCase()]) throw new Error('Credential record missing');
+          creds[user.email.toLowerCase()].password = newPassword;
+          localStorage.setItem('timebank_creds', JSON.stringify(creds));
+        }
+      }
+      setPwMessage('Password updated successfully');
+      setOldPassword(''); setNewPassword(''); setConfirmPassword('');
+    } catch (err: any) {
+      setPwError(err.message || 'Failed to update password');
+    } finally { setPwLoading(false); }
   };
 
   if (!user) {
@@ -370,6 +408,48 @@ export const ProfileView: React.FC = () => {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Change Password Section */}
+      <div className="bg-white rounded-xl shadow-lg p-4 md:p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-semibold text-gray-800 flex items-center gap-2">
+            <Lock className="w-5 h-5 text-emerald-500" />
+            Security
+          </h2>
+          <button
+            onClick={() => setShowPasswordForm(!showPasswordForm)}
+            className="text-sm px-3 py-1.5 rounded-lg border border-emerald-500 text-emerald-600 hover:bg-emerald-50"
+          >
+            {showPasswordForm ? 'Hide' : 'Change Password'}
+          </button>
+        </div>
+        {showPasswordForm && (
+          <form onSubmit={handlePasswordChange} className="space-y-4 max-w-md">
+            {pwError && <div className="p-2 text-sm bg-red-50 border border-red-200 text-red-600 rounded">{pwError}</div>}
+            {pwMessage && <div className="p-2 text-sm bg-emerald-50 border border-emerald-200 text-emerald-700 rounded">{pwMessage}</div>}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Current Password (mock)</label>
+              <input type="password" value={oldPassword} onChange={e => setOldPassword(e.target.value)} className="w-full p-2.5 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500" placeholder="(Optional in mock mode)" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
+              <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} required className="w-full p-2.5 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Confirm New Password</label>
+              <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} required className="w-full p-2.5 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500" />
+            </div>
+            <div className="flex gap-3">
+              <button type="submit" disabled={pwLoading} className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium disabled:opacity-50 flex items-center gap-2">
+                {pwLoading && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+                Save Password
+              </button>
+              <button type="button" onClick={() => { setShowPasswordForm(false); setPwError(''); setPwMessage(''); }} className="px-5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm">Cancel</button>
+            </div>
+            <p className="text-xs text-gray-500">In production with Firebase this will require re-auth and securely update your password.</p>
+          </form>
+        )}
       </div>
 
       {/* Emergency Contacts */}

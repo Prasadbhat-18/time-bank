@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { LogIn, Eye, EyeOff, Clock, Lock, Mail, Phone, Timer } from 'lucide-react';
+import { Eye, EyeOff, Clock, Lock, Mail, Phone, Timer } from 'lucide-react';
+import { ResetPasswordModal } from './ResetPasswordModal';
 
 interface LoginFormProps {
   onToggleMode: () => void;
@@ -19,6 +20,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onToggleMode }) => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [showReset, setShowReset] = useState(false);
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
 
@@ -81,6 +83,8 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onToggleMode }) => {
       setLoading(false);
     }
   };
+
+  const handleForgotPassword = () => setShowReset(true);
 
   // --- Clock-Themed Login Design ---
   return (
@@ -442,11 +446,16 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onToggleMode }) => {
           </button>
         </form>
         <div className="mt-6 text-center">
-          <button type="button" onClick={onToggleMode} className="text-blue-300 hover:text-blue-200 hover:underline font-medium transition flex items-center justify-center gap-2 mx-auto">
+          <div className="flex flex-col gap-2">
+            <button type="button" onClick={onToggleMode} className="text-blue-300 hover:text-blue-200 hover:underline font-medium transition flex items-center justify-center gap-2 mx-auto">
             <Timer className="w-4 h-4" />
             New user? Register now
           </button>
+            <button type="button" onClick={handleForgotPassword} className="text-sm text-white/80 hover:text-white/100 underline mt-1">Forgot / Reset password</button>
+          </div>
         </div>
+
+        {showReset && <ResetPasswordModal onClose={() => setShowReset(false)} />}
       </div>
       {/* Clock-themed Custom Animations */}
       <style>{`

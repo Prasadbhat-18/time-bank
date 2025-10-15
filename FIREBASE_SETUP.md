@@ -120,6 +120,31 @@ service cloud.firestore {
 }
 ```
 
+## Live Chat (E2EE) Setup
+
+To enable real-time 1:1 chat with end-to-end encryption backed by Firestore:
+
+1. Ensure your `.env.local` is configured with valid Firebase values (see above) and restart the dev server.
+2. Apply chat-aware Firestore rules. You can copy from `firestore.rules` in the repo or paste this snippet:
+
+```javascript
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /chats/{chatId} {
+      allow read, write: if request.auth != null && request.auth.uid in resource.data.participants;
+      match /messages/{messageId} {
+        allow read, write: if request.auth != null && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+      }
+    }
+  }
+}
+```
+
+3. In the UI, open Services and click “Chat” on a service that isn’t yours. The first time each participant opens the chat, a public key is published; once both are present, messages send encrypted.
+
+Optional: For an AI mediator that summarizes terms, start the local server with `GROQ_API_KEY` set and the client will call `/api/ai/mediate` via `VITE_SERVER_URL` or `http://localhost:4000` by default.
+
 ## Troubleshooting
 
 **If you see connection errors:**

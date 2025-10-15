@@ -5,6 +5,9 @@ import { Service, Skill } from '../../types';
 import { dataService } from '../../services/dataService';
 import { ServiceModal } from './ServiceModal';
 import { BookingModal } from './BookingModal';
+import { ProfileModal } from '../Profile/ProfileModal';
+import { ChatWindow } from '../Chat/ChatWindow';
+import { InfiniteCarousel } from './InfiniteCarousel';
 
 export const ServiceList: React.FC = () => {
   const { user } = useAuth();
@@ -17,14 +20,16 @@ export const ServiceList: React.FC = () => {
   const [showServiceModal, setShowServiceModal] = useState(false);
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [selectedService, setSelectedService] = useState<Service | null>(null);
+  const [profileToShow, setProfileToShow] = useState<{ id?: string; user?: any } | null>(null);
+  const [chatPeer, setChatPeer] = useState<{ peerId: string; service?: Service } | null>(null);
 
   useEffect(() => {
     loadData();
-  }, [filterType, filterCategory, searchTerm]);
+  }, [filterType, filterCategory, searchTerm, user?.id]);
 
   const loadData = async () => {
     setLoading(true);
-    const [servicesData, skillsData] = await Promise.all([
+    let [servicesData, skillsData] = await Promise.all([
       dataService.getServices({
         type: filterType === 'all' ? undefined : filterType,
         category: filterCategory || undefined,
@@ -32,11 +37,27 @@ export const ServiceList: React.FC = () => {
       }),
       dataService.getSkills(),
     ]);
+
+    // Fallback: if a service has no provider object yet (e.g. immediate reload after creation
+    // before Firestore roundtrip enriches it), inject the currently logged in user for their own services.
+    if (user?.id) {
+      servicesData = servicesData.map(s => {
+        if (!s.provider && s.provider_id === user.id) {
+          return { ...s, provider: user } as Service;
+        }
+        return s;
+      });
+    }
     
     // Debug log for cross-user booking
     console.log('Current user:', user?.id, user?.email);
-    console.log('All services:', servicesData.map(s => ({ id: s.id, title: s.title, provider_id: s.provider_id, provider_email: s.provider?.email })));
+  console.log('All services:', servicesData.map(s => ({ id: s.id, title: s.title, provider_id: s.provider_id, provider_username: s.provider?.username })));
     console.log('Services you can book:', servicesData.filter(s => s.provider_id !== user?.id));
+  // expose debug counts
+  const total = servicesData.length;
+  const mine = servicesData.filter(s => s.provider_id === user?.id).length;
+  const others = total - mine;
+  console.log(`services: total=${total}, mine=${mine}, others=${others}`);
     
     setServices(servicesData);
     setSkills(skillsData);
@@ -56,6 +77,7 @@ export const ServiceList: React.FC = () => {
         <div>
           <h1 className="text-3xl font-bold text-gray-800">Service Marketplace</h1>
           <p className="text-gray-600 mt-1">Discover and exchange skills with the community</p>
+            <div className="text-sm text-gray-500 mt-1">Debug: services total {services.length}</div>
         </div>
         <button
           onClick={() => setShowServiceModal(true)}
@@ -131,6 +153,13 @@ export const ServiceList: React.FC = () => {
                   }`}
                 ></div>
 
+                {/* Carousel for service images */}
+                {service.imageUrls && service.imageUrls.length > 0 && (
+                  <div className="mb-4">
+                    <InfiniteCarousel images={service.imageUrls} />
+                  </div>
+                )}
+
                 <div className="p-6">
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex-1">
@@ -163,14 +192,17 @@ export const ServiceList: React.FC = () => {
                     )}
                   </div>
 
-                  {service.provider && (
-                    <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-                      <div className="flex items-center gap-3">
+                  <div className="flex items-center justify-between pt-4 border-t border-gray-100">
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => setProfileToShow({ id: service.provider_id, user: service.provider })}
+                        className="flex items-center gap-3 text-left"
+                      >
                         <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden">
-                          {service.provider.avatar_url ? (
+                          {service.provider?.avatar_url ? (
                             <img
                               src={service.provider.avatar_url}
-                              alt={service.provider.username}
+                              alt={service.provider?.username || service.provider_id}
                               className="w-full h-full object-cover"
                             />
                           ) : (
@@ -178,30 +210,55 @@ export const ServiceList: React.FC = () => {
                           )}
                         </div>
                         <div>
-                          <p className="text-sm font-medium text-gray-800">{service.provider.username}</p>
+                          <p className="text-sm font-medium text-gray-800">{service.provider?.username || service.provider_id}</p>
                           <div className="flex items-center gap-1">
                             <Star className="w-3 h-3 text-amber-500 fill-amber-500" />
                             <span className="text-xs text-gray-600">
-                              {service.provider.reputation_score.toFixed(1)}
+                              {(service.provider?.reputation_score ?? 0).toFixed(1)}
                             </span>
                           </div>
                         </div>
-                      </div>
+                      </button>
+                    </div>
 
-                      {service.provider_id !== user?.id ? (
-                        <button
-                          onClick={() => handleBookService(service)}
-                          className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm rounded-lg transition"
-                        >
-                          Book Now
-                        </button>
-                      ) : (
+                    {service.provider_id !== user?.id ? (
+                      <button
+                        onClick={() => handleBookService(service)}
+                        className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm rounded-lg transition"
+                      >
+                        Book Now
+                      </button>
+                    ) : (
+                      <div className="flex items-center gap-3">
                         <span className="px-4 py-2 bg-gray-200 text-gray-500 text-sm rounded-lg">
                           Your Service
                         </span>
-                      )}
-                    </div>
-                  )}
+                        <button
+                          onClick={async () => {
+                            try {
+                              await dataService.deleteService(service.id);
+                              // refresh list
+                              await loadData();
+                            } catch (err) {
+                              console.error('Failed to cancel service', err);
+                              // optionally show toast
+                            }
+                          }}
+                          className="px-3 py-2 bg-red-100 text-red-600 text-sm rounded-lg border border-red-200"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    )}
+                    {service.provider_id !== user?.id && (
+                      <button
+                        onClick={() => setChatPeer({ peerId: service.provider_id, service })}
+                        className="ml-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 text-sm rounded-lg transition"
+                      >
+                        Chat
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             ))
@@ -229,6 +286,22 @@ export const ServiceList: React.FC = () => {
             setShowBookingModal(false);
             setSelectedService(null);
           }}
+        />
+      )}
+
+      {profileToShow && (
+        <ProfileModal
+          userId={profileToShow.id}
+          userObj={profileToShow.user}
+          onClose={() => setProfileToShow(null)}
+        />
+      )}
+
+      {chatPeer && (
+        <ChatWindow
+          peerId={chatPeer.peerId}
+          service={chatPeer.service || undefined}
+          onClose={() => setChatPeer(null)}
         />
       )}
     </div>

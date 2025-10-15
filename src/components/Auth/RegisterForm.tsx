@@ -7,53 +7,31 @@ interface RegisterFormProps {
 }
 
 export const RegisterForm: React.FC<RegisterFormProps> = ({ onToggleMode }) => {
-  const { register, registerWithPhone, loginWithGoogle } = useAuth();
-  const [registrationMethod, setRegistrationMethod] = useState<'email' | 'phone'>('email');
+  const { register, loginWithGoogle } = useAuth();
+  const [registrationMethod] = useState<'email' | 'phone'>('email');
   const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
+  // Phone registration disabled for now
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [verificationCode, setVerificationCode] = useState('');
-  const [generatedOTP, setGeneratedOTP] = useState('');
-  const [otpSent, setOtpSent] = useState(false);
-  const [otpLoading, setOtpLoading] = useState(false);
+  // const [verificationCode] = useState('');
+  // Future phone OTP flow placeholders
+  // const [generatedOTP, setGeneratedOTP] = useState('');
+  // const [otpSent, setOtpSent] = useState(false);
+  // const [otpLoading, setOtpLoading] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const sendOTP = async (phoneNumber: string) => {
-    if (!phoneNumber.trim()) return;
-    
-    setOtpLoading(true);
-    setError('');
-    
-    // Simulate API delay
-    setTimeout(() => {
-      // Generate a 6-digit OTP
-      const otp = Math.floor(100000 + Math.random() * 900000).toString();
-      setGeneratedOTP(otp);
-      setOtpSent(true);
-      setOtpLoading(false);
-      
-      // For demo purposes, we'll also set the verification code automatically after 2 seconds
-      setTimeout(() => {
-        setVerificationCode(otp);
-      }, 2000);
-    }, 1500);
-  };
-
-  const handlePhoneChange = (value: string) => {
-    setPhone(value);
-    setOtpSent(false);
-    setGeneratedOTP('');
-    setVerificationCode('');
-    setError('');
-    
-    // Auto-send OTP when phone number looks complete
-    if (value.length >= 10) {
-      sendOTP(value);
-    }
-  };
+  // const handlePhoneChange = (value: string) => {
+  //   setPhone(value);
+  //   setOtpSent(false);
+  //   setGeneratedOTP('');
+  //   setVerificationCode('');
+  //   setError('');
+  //   if (value.length >= 10) {
+  //     sendOTP(value);
+  //   }
+  // };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -79,11 +57,7 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onToggleMode }) => {
     setLoading(true);
 
     try {
-      if (registrationMethod === 'email') {
-        await register(email, password, username);
-      } else {
-        await registerWithPhone(phone, username, verificationCode);
-      }
+      await register(email, password, username);
     } catch (err: any) {
       setError(err.message || 'Registration failed. Please try again.');
     } finally {

@@ -14,6 +14,8 @@ interface AuthContextType {
   loginWithGoogle: () => Promise<void>;
   register: (email: string, password: string, username: string) => Promise<void>;
   registerWithPhone: (phone: string, username: string, code: string) => Promise<void>;
+  resetPassword: (email: string, newPassword?: string) => Promise<void>;
+  changePassword?: (currentPassword: string, newPassword: string) => Promise<void>;
   logout: () => void;
   updateUser: (updates: Partial<User>) => Promise<void>;
 }
@@ -45,6 +47,22 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
+  // Credentials helper (mock mode) - stores mapping by email -> { userId, password }
+  const loadCredentials = () => {
+    try {
+      const raw = localStorage.getItem('timebank_creds');
+      return raw ? JSON.parse(raw) as Record<string, { userId: string; password: string }> : {};
+    } catch {
+      return {} as Record<string, { userId: string; password: string }>;
+    }
+  };
+
+  const saveCredentials = (creds: Record<string, { userId: string; password: string }>) => {
+    try {
+      localStorage.setItem('timebank_creds', JSON.stringify(creds));
+    } catch {}
+  };
+
   // Helper function to load user from localStorage
   const loadUserFromStorage = (): User | null => {
     try {
@@ -61,15 +79,55 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       // Use Firebase authentication
       const unsub = onAuthStateChanged(auth, async (fbUser: FirebaseUser | null) => {
         setFirebaseUser(fbUser);
-        if (fbUser) {
-          const u = await firebaseService.getCurrentUser(fbUser.uid);
-          setUser(u);
-          saveUserToStorage(u);
-        } else {
-          setUser(null);
-          saveUserToStorage(null);
+        try {
+          if (fbUser) {
+            // Attempt to load user profile from Firestore
+            const u = await firebaseService.getCurrentUser(fbUser.uid);
+            if (u) {
+              setUser(u);
+              saveUserToStorage(u);
+            } else {
+              // If no profile exists in Firestore, construct a minimal fallback profile
+              const fallbackUser: User = {
+                id: fbUser.uid,
+                email: fbUser.email || '',
+                username: fbUser.displayName || (fbUser.email ? fbUser.email.split('@')[0] : 'user'),
+                bio: '',
+                reputation_score: 5.0,
+                total_reviews: 0,
+                created_at: new Date().toISOString(),
+              };
+              setUser(fallbackUser);
+              saveUserToStorage(fallbackUser);
+            }
+          } else {
+            setUser(null);
+            saveUserToStorage(null);
+          }
+        } catch (error: any) {
+          // Handle permission or other Firestore errors gracefully.
+          console.error('Error while loading Firebase user profile:', error);
+          // If we have an authenticated Firebase user but Firestore access is denied,
+          // create a safe fallback user so the UI remains usable.
+          if (fbUser) {
+            const fallbackUser: User = {
+              id: fbUser.uid,
+              email: fbUser.email || '',
+              username: fbUser.displayName || (fbUser.email ? fbUser.email.split('@')[0] : 'user'),
+              bio: '',
+              reputation_score: 5.0,
+              total_reviews: 0,
+              created_at: new Date().toISOString(),
+            };
+            setUser(fallbackUser);
+            saveUserToStorage(fallbackUser);
+          } else {
+            setUser(null);
+            saveUserToStorage(null);
+          }
+        } finally {
+          setLoading(false);
         }
-        setLoading(false);
       });
       return () => unsub();
     } else {
@@ -97,15 +155,50 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const login = async (email: string, password: string) => {
     if (isFirebaseConfigured() && auth) {
-      // Use Firebase authentication
-      const user = await firebaseService.login(email, password);
-      if (!user) throw new Error('Invalid credentials');
+      try {
+        // Try Firebase authentication first
+        const u = await firebaseService.login(email, password);
+        if (!u) throw new Error('Invalid credentials');
+        setUser(u);
+        saveUserToStorage(u);
+        return;
+      } catch (err: any) {
+        // If Firebase auth fails, allow known mock fallback accounts (demo & official)
+        const e = email.toLowerCase();
+        if (e === 'demo@timebank.com' && password === 'demo123') {
+          setUser(mockUser);
+          saveUserToStorage(mockUser);
+          return;
+        }
+        if (e === 'official@timebank.com' && password === 'official123') {
+          const officialUser: User = {
+            id: 'official-account',
+            email: 'official@timebank.com',
+            username: 'timebank_official',
+            bio: 'Official TimeBank account offering verified professional services.',
+            avatar_url: 'https://images.pexels.com/photos/3184465/pexels-photo-3184465.jpeg?auto=compress&cs=tinysrgb&w=200',
+            reputation_score: 5.0,
+            total_reviews: 25,
+            created_at: new Date('2024-01-01').toISOString(),
+            phone: '+1-555-0100',
+          };
+          setUser(officialUser);
+          saveUserToStorage(officialUser);
+          return;
+        }
+        // Re-throw original error if not a mock credential
+        throw err;
+      }
     } else {
       // Use mock authentication - support demo accounts and Gmail addresses
+      // First, handle demo and official quick-access (predefined)
       if (email === 'demo@timebank.com' && password === 'demo123') {
         setUser(mockUser);
         saveUserToStorage(mockUser);
-      } else if (email === 'official@timebank.com' && password === 'official123') {
+        return;
+      }
+
+      if (email === 'official@timebank.com' && password === 'official123') {
         const officialUser: User = {
           id: 'official-account',
           email: 'official@timebank.com',
@@ -119,11 +212,39 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         };
         setUser(officialUser);
         saveUserToStorage(officialUser);
-      } else if (email.endsWith('@gmail.com') && password.length >= 6) {
-        // Allow any Gmail account with a password of at least 6 characters
+        return;
+      }
+
+      // Load stored mock credentials
+      const creds = loadCredentials();
+      const saved = creds[email.toLowerCase()];
+      if (saved) {
+        // Enforce exact password match for registered accounts
+        if (saved.password !== password) {
+          throw new Error('Incorrect password');
+        }
+        // Load user by id
+        let storedUser = await dataService.getUserById(saved.userId);
+        if (!storedUser) {
+          // If user not found, create a minimal user record to match creds
+          storedUser = await dataService.createUser({
+            id: saved.userId,
+            email,
+            username: email.split('@')[0],
+            bio: '',
+            reputation_score: 5.0,
+            total_reviews: 0,
+            created_at: new Date().toISOString(),
+          } as any);
+        }
+        setUser(storedUser);
+        saveUserToStorage(storedUser);
+        return;
+      }
+
+      // Fallback: allow ephemeral Gmail sign-in if no cred record exists (existing behavior)
+      if (email.endsWith('@gmail.com') && password.length >= 6) {
         const userId = `gmail-${email.replace('@gmail.com', '').replace(/[^a-zA-Z0-9]/g, '')}`;
-        
-        // Check if user already exists or create new one
         let gmailUser = await dataService.getUserById(userId);
         if (!gmailUser) {
           gmailUser = {
@@ -136,14 +257,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             total_reviews: 0,
             created_at: new Date().toISOString(),
           };
-          // Add to dataService's user storage
           await dataService.createUser(gmailUser);
         }
         setUser(gmailUser);
         saveUserToStorage(gmailUser);
-      } else {
-        throw new Error('Invalid credentials. Use demo@timebank.com / demo123, official@timebank.com / official123, or any Gmail account with a password of at least 6 characters');
+        return;
       }
+
+      throw new Error('Invalid credentials. Use demo@timebank.com / demo123, official@timebank.com / official123, or register an account first');
     }
   };
 
@@ -189,11 +310,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const register = async (email: string, password: string, username: string) => {
     if (isFirebaseConfigured() && auth) {
       // Use Firebase registration
-      await firebaseService.register(email, password, username);
+      const newUser = await firebaseService.register(email, password, username);
+      // set context user and persist
+      setUser(newUser);
+      saveUserToStorage(newUser);
     } else {
       // Mock registration - just log the user in
       const newUser: User = {
-        id: Date.now().toString(),
+        id: `user-${Date.now()}`,
         email,
         username,
         bio: 'New TimeBank user',
@@ -201,6 +325,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         total_reviews: 0,
         created_at: new Date().toISOString()
       };
+      // Persist user through dataService
+      await dataService.createUser(newUser as any);
+      // Save credential mapping for mock login
+      const creds = loadCredentials();
+      creds[email.toLowerCase()] = { userId: newUser.id, password };
+      saveCredentials(creds);
       setUser(newUser);
       saveUserToStorage(newUser);
     }
@@ -223,6 +353,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           total_reviews: 0,
           created_at: new Date().toISOString()
         };
+        await dataService.createUser(newUser as any);
+        // Save a simple credential mapping (phone as key)
+        const creds = loadCredentials();
+        creds[newUser.email.toLowerCase()] = { userId: newUser.id, password: code };
+        saveCredentials(creds);
         setUser(newUser);
         saveUserToStorage(newUser);
       } else {
@@ -233,12 +368,19 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const loginWithGoogle = async () => {
     if (isFirebaseConfigured() && auth) {
-      // Firebase Google authentication would go here
-      throw new Error('Google authentication not implemented for Firebase yet');
+      try {
+        const user = await firebaseService.loginWithGoogle();
+        if (user) {
+          setUser(user);
+          saveUserToStorage(user);
+        }
+      } catch (error: any) {
+        throw error;
+      }
     } else {
-      // Mock Google authentication - simulate OAuth flow
+      // Fallback: keep existing mock popup flow
       return new Promise<void>((resolve, reject) => {
-        // Simulate OAuth popup window
+        // existing mock popup implementation left intact for offline/demo mode
         const popup = window.open('', 'google-auth', 'width=500,height=600,scrollbars=yes,resizable=yes');
         
         if (!popup) {
@@ -246,7 +388,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           return;
         }
 
-        // Simulate Google OAuth flow
         popup.document.write(`
           <html>
             <head>
@@ -314,12 +455,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           </html>
         `);
 
-        // Listen for auth result
         const handleMessage = (event: MessageEvent) => {
           if (event.data.type === 'GOOGLE_AUTH_SUCCESS') {
             const { user: googleUser } = event.data;
-            
-            // Create TimeBank user from Google account
             const newUser: User = {
               id: `google-${Date.now()}`,
               email: googleUser.email,
@@ -330,7 +468,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
               total_reviews: 0,
               created_at: new Date().toISOString()
             };
-            
             setUser(newUser);
             saveUserToStorage(newUser);
             window.removeEventListener('message', handleMessage);
@@ -340,7 +477,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
         window.addEventListener('message', handleMessage);
 
-        // Handle popup close without auth
         const checkClosed = setInterval(() => {
           if (popup.closed) {
             clearInterval(checkClosed);
@@ -349,6 +485,42 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           }
         }, 1000);
       });
+    }
+  };
+
+  const resetPassword = async (email: string, newPassword?: string) => {
+    if (isFirebaseConfigured() && auth) {
+      // Send password reset email only (Firebase handles the flow)
+      await firebaseService.sendResetEmail(email);
+    } else {
+      const creds = loadCredentials();
+      const entry = creds[email.toLowerCase()];
+      if (!entry) {
+        throw new Error('No account found for that email');
+      }
+      if (!newPassword) {
+        // In demo mode, we allow reset without verification for convenience
+        // but require at least 6 chars
+        throw new Error('Please provide a new password (at least 6 characters)');
+      }
+      if (newPassword.length < 6) throw new Error('Password must be at least 6 characters');
+      entry.password = newPassword;
+      saveCredentials(creds);
+    }
+  };
+
+  const changePassword = async (currentPassword: string, newPassword: string) => {
+    if (isFirebaseConfigured() && auth) {
+      await firebaseService.changePassword(currentPassword, newPassword);
+    } else {
+      // Mock: verify current password matches stored one
+      const creds = loadCredentials();
+      const entry = creds[user?.email?.toLowerCase() || ''];
+      if (!entry) throw new Error('No stored credentials for user');
+      if (currentPassword && entry.password !== currentPassword) throw new Error('Current password incorrect');
+      if (newPassword.length < 6) throw new Error('New password must be at least 6 characters');
+      entry.password = newPassword;
+      saveCredentials(creds);
     }
   };
 
@@ -377,7 +549,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   return (
-    <AuthContext.Provider value={{ user, firebaseUser, loading, login, loginWithPhone, loginWithGoogle, register, registerWithPhone, logout, updateUser }}>
+    <AuthContext.Provider value={{ user, firebaseUser, loading, login, loginWithPhone, loginWithGoogle, register, registerWithPhone, resetPassword, changePassword, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   );

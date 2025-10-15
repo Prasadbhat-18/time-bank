@@ -57,6 +57,7 @@ export interface Service {
   status: 'active' | 'inactive' | 'completed';
   type: 'offer' | 'request';
   created_at: string;
+  imageUrls?: string[];
 }
 
 export interface Booking {
@@ -102,4 +103,24 @@ export interface Review {
   rating: number;
   comment: string;
   created_at: string;
+}
+
+// E2EE Chat types
+export interface Chat {
+  id: string;
+  participants: string[]; // exactly two user IDs
+  participantsPublicKeys?: Record<string, JsonWebKey>; // userId -> public JWK (ECDH)
+  service_id?: string;
+  created_at: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  chat_id: string;
+  sender_id: string; // user id (or 'ai-mediator')
+  // Encrypted payload (AES-GCM)
+  ciphertext: string; // base64
+  iv: string; // base64
+  created_at: string;
+  type?: 'text' | 'system';
 }

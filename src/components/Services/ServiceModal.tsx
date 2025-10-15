@@ -1,3 +1,10 @@
+import { uploadToCloudinary } from '../../services/uploadToCloudinary';
+
+// Use environment variable if available, else fallback to hardcoded
+const CLOUDINARY_CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || 'diecgt687';
+const CLOUDINARY_UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'unsigned';
+  // Cloudinary config (replace with your own values)
+  // (Cloud name and preset are now set above)
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { X } from 'lucide-react';
@@ -16,7 +23,19 @@ export const ServiceModal: React.FC<ServiceModalProps> = ({ onClose }) => {
   const [skillId, setSkillId] = useState('');
   const [type, setType] = useState<'offer' | 'request'>('offer');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [creditsPerHour, setCreditsPerHour] = useState<number>(1.0);
+  const [imageFiles, setImageFiles] = useState<File[]>([]);
+  const [imagePreviews, setImagePreviews] = useState<string[]>([]);
+  // Handle image file selection
+  // Allow multiple image selection and preview
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    setImageFiles(files);
+    setImagePreviews(files.map(file => URL.createObjectURL(file)));
+  };
 
   // Simple level rule: allow custom pricing once user has >= 5 reviews and rating >= 4.5
   const canSetCustomCredits = !!user && user.total_reviews >= 5 && user.reputation_score >= 4.5;
@@ -35,7 +54,20 @@ export const ServiceModal: React.FC<ServiceModalProps> = ({ onClose }) => {
     if (!user) return;
 
     setLoading(true);
+    setError('');
+    setUploading(false);
+    setUploadProgress(0);
     try {
+      let imageUrls: string[] = [];
+      if (imageFiles.length > 0) {
+        setUploading(true);
+        for (let i = 0; i < imageFiles.length; i++) {
+          const url = await uploadToCloudinary(imageFiles[i], CLOUDINARY_CLOUD_NAME, CLOUDINARY_UPLOAD_PRESET);
+          imageUrls.push(url);
+          setUploadProgress(Math.round(((i + 1) / imageFiles.length) * 100));
+        }
+        setUploading(false);
+      }
       await dataService.createService({
         provider_id: user.id,
         skill_id: skillId,
@@ -44,10 +76,14 @@ export const ServiceModal: React.FC<ServiceModalProps> = ({ onClose }) => {
         credits_per_hour: canSetCustomCredits ? creditsPerHour : 1.0,
         status: 'active',
         type,
+        imageUrls,
       });
       onClose();
     } catch (error) {
+      setUploading(false);
+      setUploadProgress(0);
       console.error('Failed to create service:', error);
+      setError((error as any).message || 'Failed to create service');
     } finally {
       setLoading(false);
     }
@@ -56,6 +92,21 @@ export const ServiceModal: React.FC<ServiceModalProps> = ({ onClose }) => {
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="mb-4">
+          <label className="block font-medium mb-1">Service Images (multiple allowed)</label>
+          <input type="file" accept="image/*" multiple onChange={handleImageChange} />
+          <div className="flex gap-2 mt-2">
+            {imagePreviews.map((src, i) => (
+              <img key={i} src={src} alt="preview" className="w-20 h-20 object-cover rounded" />
+            ))}
+          </div>
+          {uploading && (
+            <div className="mt-2 text-sm text-blue-600">Uploading images... {uploadProgress}%</div>
+          )}
+          {error && (
+            <div className="mt-2 text-sm text-red-600">{error}</div>
+          )}
+        </div>
         <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
           <h2 className="text-2xl font-bold text-gray-800">Post a Service</h2>
           <button
@@ -172,6 +223,12 @@ export const ServiceModal: React.FC<ServiceModalProps> = ({ onClose }) => {
               This ensures fair exchange across all skill levels.
             </p>
           </div>
+
+          {error && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+              {error}
+            </div>
+          )}
 
           <div className="flex gap-3">
             <button

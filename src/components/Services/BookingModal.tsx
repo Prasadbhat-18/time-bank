@@ -36,6 +36,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({ service, onClose, on
         scheduled_start: scheduledStart.toISOString(),
         scheduled_end: scheduledEnd.toISOString(),
         duration_hours: duration,
+        confirmation_status: 'pending'
       });
 
       onBooked();

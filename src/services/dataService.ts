@@ -12,21 +12,16 @@ import {
 
 // Firebase imports
 import { db, isFirebaseConfigured } from '../firebase';
+import { firebaseService } from './firebaseService';
 import {
   doc,
-  getDoc,
   setDoc,
-  updateDoc,
   collection,
   getDocs,
-  addDoc,
-  query,
-  where,
-  orderBy,
   serverTimestamp,
-  runTransaction,
-  increment
 } from 'firebase/firestore';
+
+import { deleteDoc } from 'firebase/firestore';
 
 // Check if Firebase is available
 const useFirebase = isFirebaseConfigured() && !!db;
@@ -47,6 +42,23 @@ const saveToStorage = <T>(key: string, data: T[]) => {
   } catch {
     // Ignore storage errors
   }
+};
+
+// Shared localStorage (cross-login in same browser) fallback for dev when Firestore is unavailable
+const sharedKey = (key: string) => `timebank_shared_${key}`;
+const loadShared = <T>(key: string, fallback: T[] = []): T[] => {
+  try {
+    const stored = localStorage.getItem(sharedKey(key));
+    return stored ? JSON.parse(stored) : fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+const saveShared = <T>(key: string, data: T[]) => {
+  try {
+    localStorage.setItem(sharedKey(key), JSON.stringify(data));
+  } catch {}
 };
 
 // Firebase helper functions
@@ -158,6 +170,40 @@ const addTestServices = () => {
 // Initialize test services
 addTestServices();
 
+// Add test bookings so cross-user booking UI can be tested
+const addTestBookings = () => {
+  const testBookings = [
+    {
+      id: 'test-booking-1',
+      service_id: 'test-service-1',
+      provider_id: 'demo-user-1',
+      requester_id: 'demo-user-2',
+      scheduled_start: new Date().toISOString(),
+      scheduled_end: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      duration_hours: 1,
+      status: 'completed',
+      confirmation_status: 'provider_confirmed',
+      credits_held: 1,
+      credits_transferred: true,
+      created_at: new Date().toISOString(),
+    }
+  ];
+
+  testBookings.forEach(tb => {
+    if (!mockBookings.find(b => b.id === tb.id)) mockBookings.push(tb as any);
+  });
+
+  saveToStorage('bookings', mockBookings);
+  // Save to shared storage for cross-login visibility
+  const shared = loadShared<Booking>('bookings', mockBookings);
+  testBookings.forEach(tb => {
+    if (!shared.find(b => b.id === tb.id)) shared.push(tb as any);
+  });
+  saveShared('bookings', shared);
+};
+
+addTestBookings();
+
 export const dataService = {
   async getUserById(userId: string): Promise<User | null> {
     return mockUsers.find(user => user.id === userId) || null;
@@ -239,12 +285,115 @@ export const dataService = {
   },
 
   async getServices(filters?: { category?: string; type?: string; search?: string }): Promise<Service[]> {
+  // If Firebase is enabled, load services from Firestore so they are shared across users
+  if (useFirebase) {
+      try {
+        const servicesFromFs = await loadFromFirestore<Service>('services');
+
+        // Merge services from Firestore with local mock and shared fallback so local posts are visible
+        const sharedServices = loadShared<Service>('services', []);
+        const allCandidates = [...servicesFromFs, ...sharedServices, ...mockServices];
+        // Deduplicate by id, prefer Firestore entry when present
+        const byId = new Map<string, Service>();
+        for (const s of allCandidates) {
+          if (!s || !s.id) continue;
+          if (!byId.has(s.id) || servicesFromFs.find(sf => sf.id === s.id)) {
+            byId.set(s.id, s);
+          }
+        }
+        let filtered = Array.from(byId.values());
+
+        if (filters?.type) {
+          filtered = filtered.filter(s => s.type === filters.type);
+        }
+
+        if (filters?.search) {
+          const term = filters.search.toLowerCase();
+          filtered = filtered.filter(s =>
+            (s.title as string)?.toLowerCase().includes(term) ||
+            (s.description as string)?.toLowerCase().includes(term)
+          );
+        }
+
+        if (filters?.category) {
+          const categorySkills = mockSkills.filter(sk => sk.category === filters.category);
+          const skillIds = categorySkills.map(sk => sk.id);
+          filtered = filtered.filter(s => skillIds.includes(s.skill_id));
+        }
+
+        // Enrich with provider (load provider from Firestore when available) and local skill data
+        const providerIds = Array.from(new Set(filtered.map(s => s.provider_id).filter(Boolean)));
+        const providerMap = new Map<string, any>();
+        await Promise.all(
+          providerIds.map(async (pid) => {
+            try {
+              const p = await firebaseService.getCurrentUser(pid);
+              if (p) providerMap.set(pid, p);
+            } catch (err) {
+              // ignore per-user fetch errors
+            }
+          })
+        );
+
+        const enriched = filtered.map(s => ({
+          ...s,
+          // Preserve existing embedded provider snapshot first, then try Firebase user, then mock
+          provider: s.provider || providerMap.get(s.provider_id) || mockUsers.find(u => u.id === s.provider_id) || undefined,
+          skill: mockSkills.find(sk => sk.id === s.skill_id) || undefined,
+        })) as Service[];
+
+        return enriched;
+      } catch (error) {
+        console.error('Failed to load services from Firestore, will try shared local fallback', error);
+        // Try shared local fallback
+        const shared = loadShared<Service>('services', mockServices);
+        let filteredShared = [...shared];
+        if (filters?.type) filteredShared = filteredShared.filter(s => s.type === filters.type);
+        if (filters?.search) {
+          const term = filters.search.toLowerCase();
+          filteredShared = filteredShared.filter(s => (s.title as string)?.toLowerCase().includes(term) || (s.description as string)?.toLowerCase().includes(term));
+        }
+        if (filters?.category) {
+          const categorySkills = mockSkills.filter(sk => sk.category === filters.category);
+          const skillIds = categorySkills.map(sk => sk.id);
+          filteredShared = filteredShared.filter(s => skillIds.includes(s.skill_id));
+        }
+
+        const enrichedShared = filteredShared.map(s => ({
+          ...s,
+          provider: s.provider || mockUsers.find(u => u.id === s.provider_id) || undefined,
+          skill: mockSkills.find(sk => sk.id === s.skill_id) || undefined,
+        })) as Service[];
+        return enrichedShared;
+      }
+    }
+    // If Firebase is not available, try shared localStorage (cross-login in same browser)
+    if (!useFirebase) {
+      const shared = loadShared<Service>('services', mockServices);
+      let filteredShared = [...shared];
+      if (filters?.type) filteredShared = filteredShared.filter(s => s.type === filters.type);
+      if (filters?.search) {
+        const term = filters.search.toLowerCase();
+        filteredShared = filteredShared.filter(s => s.title.toLowerCase().includes(term) || s.description.toLowerCase().includes(term));
+      }
+      if (filters?.category) {
+        const skillIds = mockSkills.filter(sk => sk.category === filters.category).map(sk => sk.id);
+        filteredShared = filteredShared.filter(s => skillIds.includes(s.skill_id));
+      }
+      const enrichedShared = filteredShared.map(s => ({
+        ...s,
+        provider: s.provider || mockUsers.find(u => u.id === s.provider_id),
+        skill: mockSkills.find(sk => sk.id === s.skill_id),
+      })) as Service[];
+      return enrichedShared;
+    }
+
     let filtered = [...mockServices];
-    
+
     if (filters?.type) {
       filtered = filtered.filter(s => s.type === filters.type);
     }
-    
+
     if (filters?.search) {
       const term = filters.search.toLowerCase();
       filtered = filtered.filter(s => 
@@ -252,7 +401,7 @@ export const dataService = {
         s.description.toLowerCase().includes(term)
       );
     }
-    
+
     if (filters?.category) {
       const categorySkills = mockSkills.filter(s => s.category === filters.category);
       const skillIds = categorySkills.map(s => s.id);
@@ -262,36 +411,107 @@ export const dataService = {
     // Enrich with provider and skill so UI can render footer and booking button
     const enriched = filtered.map(s => ({
       ...s,
-      provider: mockUsers.find(u => u.id === s.provider_id),
+      provider: s.provider || mockUsers.find(u => u.id === s.provider_id),
       skill: mockSkills.find(sk => sk.id === s.skill_id),
     })) as Service[];
     return enriched;
   },
 
   async getUserServices(userId: string): Promise<Service[]> {
+    if (useFirebase) {
+      try {
+        const servicesFromFs = await loadFromFirestore<Service>('services');
+        // Merge Firestore + shared + mock, then filter by provider
+        const sharedServices = loadShared<Service>('services', []);
+        const allCandidates = [...servicesFromFs, ...sharedServices, ...mockServices];
+        const byId = new Map<string, Service>();
+        for (const s of allCandidates) {
+          if (!s || !s.id) continue;
+          if (!byId.has(s.id) || servicesFromFs.find(sf => sf.id === s.id)) {
+            byId.set(s.id, s);
+          }
+        }
+        const services = Array.from(byId.values()).filter(s => s.provider_id === userId);
+        return services.map(s => ({
+          ...s,
+          provider: s.provider || mockUsers.find(u => u.id === s.provider_id) || undefined,
+          skill: mockSkills.find(sk => sk.id === s.skill_id) || undefined,
+        })) as Service[];
+      } catch (error) {
+        console.error('Failed to load user services from Firestore, falling back to local services', error);
+      }
+    }
+
     const services = mockServices.filter(service => service.provider_id === userId);
     return services.map(s => ({
       ...s,
-      provider: mockUsers.find(u => u.id === s.provider_id),
+      provider: s.provider || mockUsers.find(u => u.id === s.provider_id),
       skill: mockSkills.find(sk => sk.id === s.skill_id),
     })) as Service[];
   },
 
-  async createService(service: Omit<Service, 'id' | 'created_at'>): Promise<Service> {
+  async createService(service: Omit<Service, 'id' | 'created_at'> & { imageFiles?: File[] }): Promise<Service> {
+    // Resolve provider object early so we store it with the service (prevents fallback random IDs in UI)
+    const providerId = service.provider_id;
+    let providerObj: any = mockUsers.find(u => u.id === providerId);
+    if (!providerObj) {
+      try {
+        const saved = localStorage.getItem('timebank_user');
+        if (saved) {
+          const savedUser = JSON.parse(saved);
+          if (savedUser?.id === providerId) providerObj = savedUser;
+        }
+      } catch {}
+    }
+    if (!providerObj && useFirebase) {
+      try {
+        const p = await firebaseService.getCurrentUser(providerId);
+        if (p) providerObj = p as any;
+      } catch {}
+    }
+    if (!providerObj) {
+      providerObj = {
+        id: providerId,
+        username: providerId, // last resort; should rarely show now
+        email: '',
+        reputation_score: 0,
+        total_reviews: 0,
+        created_at: new Date().toISOString(),
+      };
+    }
+
+    // Only use imageUrls (Cloudinary)
+    const imageUrls: string[] = service.imageUrls && service.imageUrls.length > 0 ? service.imageUrls : [];
+
     const newService: Service = {
       ...service,
       id: Date.now().toString(),
-      created_at: new Date().toISOString()
-    };
-    // Persist in-memory and localStorage
+      created_at: new Date().toISOString(),
+      provider: providerObj,
+      imageUrls,
+    } as Service;
+
+    // Persist in-memory and localStorage with provider snapshot
     mockServices.push(newService);
     saveToStorage('services', mockServices);
-    // Return enriched
-    return {
-      ...newService,
-      provider: mockUsers.find(u => u.id === newService.provider_id),
-      skill: mockSkills.find(sk => sk.id === newService.skill_id),
-    } as Service;
+
+    // Persist to Firestore when available
+    if (useFirebase) {
+      try {
+        await saveToFirestore('services', newService.id, newService);
+      } catch (error) {
+        console.error('Failed to save service to Firestore, saving to shared fallback:', error);
+        const sharedFs = loadShared<Service>('services', mockServices.filter(s => !s.id.startsWith('test-')));
+        sharedFs.push(newService);
+        saveShared('services', sharedFs);
+      }
+    } else {
+      const shared = loadShared<Service>('services', mockServices.filter(s => !s.id.startsWith('test-')));
+      shared.push(newService);
+      saveShared('services', shared);
+    }
+
+    return newService;
   },
 
   async updateService(serviceId: string, updates: Partial<Service>): Promise<Service> {
@@ -300,6 +520,13 @@ export const dataService = {
     const updated = { ...mockServices[idx], ...updates } as Service;
     mockServices[idx] = updated;
     saveToStorage('services', mockServices);
+    if (useFirebase) {
+      try {
+        await saveToFirestore('services', serviceId, updated);
+      } catch (error) {
+        console.error('Failed to update service in Firestore:', error);
+      }
+    }
     return {
       ...updated,
       provider: mockUsers.find(u => u.id === updated.provider_id),
@@ -312,10 +539,29 @@ export const dataService = {
     if (idx !== -1) {
       mockServices.splice(idx, 1);
       saveToStorage('services', mockServices);
+      if (useFirebase) {
+        try {
+          await deleteDoc(doc(db, 'services', serviceId));
+        } catch (error) {
+          console.error('Failed to delete service from Firestore:', error);
+        }
+      }
     }
   },
 
   async getBookings(userId: string): Promise<Booking[]> {
+    // If Firebase available we would load shared bookings; otherwise, use shared localStorage fallback
+    if (!useFirebase) {
+      const sharedBookings = loadShared<Booking>('bookings', mockBookings);
+      const bookings = sharedBookings.filter(booking => booking.provider_id === userId || booking.requester_id === userId);
+      return bookings.map(b => ({
+        ...b,
+        provider: mockUsers.find(u => u.id === b.provider_id),
+        requester: mockUsers.find(u => u.id === b.requester_id),
+        service: mockServices.find(s => s.id === b.service_id),
+      })) as Booking[];
+    }
+
     const bookings = mockBookings.filter(booking => 
       booking.provider_id === userId || booking.requester_id === userId
     );
@@ -360,8 +606,7 @@ export const dataService = {
     mockBookings.push(newBooking);
     saveToStorage('bookings', mockBookings);
     saveToStorage('time_credits', mockTimeCredits);
-    
-    // Also save to Firebase if available
+    // Try to persist to Firestore when available; on failure, persist to shared fallback
     if (useFirebase) {
       try {
         await saveToFirestore('bookings', newBooking.id, newBooking);
@@ -369,8 +614,17 @@ export const dataService = {
           await saveToFirestore('time_credits', booking.requester_id, requesterCredits);
         }
       } catch (error) {
-        console.error('Failed to save booking to Firebase:', error);
+        console.error('Failed to save booking to Firestore, falling back to shared storage:', error);
+        const shared = loadShared<Booking>('bookings', mockBookings);
+        shared.push(newBooking);
+        saveShared('bookings', shared);
+        saveShared('time_credits', mockTimeCredits);
       }
+    } else {
+      const shared = loadShared<Booking>('bookings', mockBookings);
+      shared.push(newBooking);
+      saveShared('bookings', shared);
+      saveShared('time_credits', mockTimeCredits);
     }
     return {
       ...newBooking,
@@ -422,6 +676,73 @@ export const dataService = {
       requester: mockUsers.find(u => u.id === updated.requester_id),
       service: mockServices.find(s => s.id === updated.service_id),
     } as Booking;
+  },
+
+  // Admin helper: return all services (raw, merged from Firestore/shared/mock)
+  async getAllRawServices(): Promise<any[]> {
+    if (useFirebase) {
+      try {
+        const servicesFromFs = await loadFromFirestore<any>('services');
+        const sharedServices = loadShared<any>('services', []);
+        const allCandidates = [...servicesFromFs, ...sharedServices, ...mockServices];
+        const byId = new Map<string, any>();
+        for (const s of allCandidates) {
+          if (!s || !s.id) continue;
+          if (!byId.has(s.id) || servicesFromFs.find((sf: any) => sf.id === s.id)) {
+            byId.set(s.id, s);
+          }
+        }
+        return Array.from(byId.values());
+      } catch (err) {
+        console.error('Failed to load all raw services from Firestore, falling back to shared/mock', err);
+        return loadShared<any>('services', mockServices);
+      }
+    }
+    return loadShared<any>('services', mockServices);
+  },
+
+  // Admin helper: return all bookings (raw)
+  async getAllRawBookings(): Promise<any[]> {
+    if (useFirebase) {
+      try {
+        const bookingsFromFs = await loadFromFirestore<any>('bookings');
+        const shared = loadShared<any>('bookings', mockBookings);
+        const byId = new Map<string, any>();
+        for (const b of [...bookingsFromFs, ...shared, ...mockBookings]) {
+          if (!b || !b.id) continue;
+          if (!byId.has(b.id) || bookingsFromFs.find((bf: any) => bf.id === b.id)) {
+            byId.set(b.id, b);
+          }
+        }
+        return Array.from(byId.values());
+      } catch (err) {
+        console.error('Failed to load bookings from Firestore, falling back to shared/mock', err);
+        return loadShared<any>('bookings', mockBookings);
+      }
+    }
+    return loadShared<any>('bookings', mockBookings);
+  },
+
+  // Admin helper: return all users (raw)
+  async getAllRawUsers(): Promise<any[]> {
+    if (useFirebase) {
+      try {
+        const usersFromFs = await loadFromFirestore<any>('users');
+        // Merge with mock users
+        const byId = new Map<string, any>();
+        for (const u of [...usersFromFs, ...mockUsers]) {
+          if (!u || !u.id) continue;
+          if (!byId.has(u.id) || usersFromFs.find((uf: any) => uf.id === u.id)) {
+            byId.set(u.id, u);
+          }
+        }
+        return Array.from(byId.values());
+      } catch (err) {
+        console.error('Failed to load users from Firestore, falling back to mock', err);
+        return mockUsers;
+      }
+    }
+    return mockUsers;
   },
 
   async getReviews(userId: string): Promise<Review[]> {
