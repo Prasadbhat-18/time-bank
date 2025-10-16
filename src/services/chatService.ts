@@ -3,6 +3,7 @@ import {
   addDoc,
   collection,
   doc,
+  onSnapshot as onDocSnapshot,
   getDoc,
   getDocs,
   onSnapshot,
@@ -23,6 +24,68 @@ const loadShared = <T>(key: string, fb: T[] = []) => {
 const saveShared = <T>(key: string, data: T[]) => { try { localStorage.setItem(sharedKey(key), JSON.stringify(data)); } catch {} };
 
 export const chatService = {
+  subscribeChatDoc(chatId: string, cb: (data: any) => void): () => void {
+    if (useFirebase) {
+      const ref = doc(db, 'chats', chatId);
+      const unsub = onDocSnapshot(ref, (snap) => {
+        if (!snap.exists()) return cb({});
+        const data = snap.data() as any;
+        cb({ ...data, created_at: data.created_at?.toDate?.()?.toISOString?.() || undefined });
+      });
+      return unsub;
+    }
+    // local fallback
+    let stopped = false;
+    const tick = () => {
+      if (stopped) return;
+      const chats = loadShared<any>('chats', []);
+      const found = chats.find((c: any) => c.id === chatId) || {};
+      cb(found);
+      setTimeout(tick, 1000);
+    };
+    tick();
+    return () => { stopped = true; };
+  },
+
+  async setTyping(chatId: string, userId: string): Promise<void> {
+    // Lightweight typing ping: updates chats.typing[userId] with a timestamp
+    if (useFirebase) {
+      const ref = doc(db, 'chats', chatId);
+      const d = await getDoc(ref);
+      const data = d.exists() ? (d.data() as any) : {};
+      const updated = { ...(data || {}), typing: { ...(data?.typing || {}), [userId]: serverTimestamp() } };
+      await setDoc(ref, updated, { merge: true });
+      return;
+    }
+    // local fallback using shared storage
+    const chats = loadShared<any>('chats', []);
+    const idx = chats.findIndex((c: any) => c.id === chatId);
+    if (idx !== -1) {
+      const c = chats[idx] || {};
+      c.typing = { ...(c.typing || {}), [userId]: new Date().toISOString() };
+      chats[idx] = c;
+      saveShared('chats', chats);
+    }
+  },
+
+  async setLastSeen(chatId: string, userId: string): Promise<void> {
+    if (useFirebase) {
+      const ref = doc(db, 'chats', chatId);
+      const d = await getDoc(ref);
+      const data = d.exists() ? (d.data() as any) : {};
+      const updated = { ...(data || {}), lastSeen: { ...(data?.lastSeen || {}), [userId]: serverTimestamp() } };
+      await setDoc(ref, updated, { merge: true });
+      return;
+    }
+    const chats = loadShared<any>('chats', []);
+    const idx = chats.findIndex((c: any) => c.id === chatId);
+    if (idx !== -1) {
+      const c = chats[idx];
+      c.lastSeen = { ...(c.lastSeen || {}), [userId]: new Date().toISOString() };
+      chats[idx] = c;
+      saveShared('chats', chats);
+    }
+  },
   async getOrCreateChat(userId: string, peerId: string, serviceId?: string, myPubKey?: JsonWebKey): Promise<Chat> {
     if (useFirebase) {
       // Find existing chat with both participants

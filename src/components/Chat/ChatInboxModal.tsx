@@ -21,6 +21,7 @@ export const ChatInboxModal: React.FC<Props> = ({ onSelectChat, onClose }) => {
   useEffect(() => {
     if (!user) return;
     let stop = false;
+    const unsubs: Array<() => void> = [];
     (async () => {
       // Get all chats for this user
       const allChats = await getUserChats(user.id);
@@ -35,17 +36,33 @@ export const ChatInboxModal: React.FC<Props> = ({ onSelectChat, onClose }) => {
             setPeerInfo((prev) => ({ ...prev, [peerId]: info }));
           });
         }
-        chatService.subscribeMessages(chat.id, (msgs) => {
-          // Always update messages for this chat
+        unsubs.push(chatService.subscribeChatDoc(chat.id, (doc) => {
+          // doc.lastSeen[userId] can be serverTimestamp; normalize to ms
+          (chat as any).__lastSeenMs = (() => {
+            const seen = doc?.lastSeen?.[user.id];
+            if (!seen) return 0;
+            if (typeof seen === 'string') { const t = Date.parse(seen); return isNaN(t) ? 0 : t; }
+            if (typeof seen?.toDate === 'function') return seen.toDate().getTime();
+            if (typeof seen === 'number') return seen;
+            return 0;
+          })();
+        }));
+
+        unsubs.push(chatService.subscribeMessages(chat.id, (msgs) => {
           const sorted = [...msgs].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
           setLastMessages((prev) => ({ ...prev, [chat.id]: sorted[sorted.length - 1] }));
-          // Unread: messages not sent by me (no read tracking yet)
-          const unread = sorted.filter((m) => m.sender_id !== user.id).length;
+          const seenMs = (chat as any).__lastSeenMs || 0;
+          const unread = sorted.filter((m) => m.sender_id !== user.id && new Date(m.created_at).getTime() > seenMs).length;
           setUnreadCounts((prev) => ({ ...prev, [chat.id]: unread }));
-        });
+        }));
       });
     })();
-    return () => { stop = true; };
+    return () => {
+      stop = true;
+      unsubs.forEach((fn) => {
+        try { fn(); } catch (_) { /* ignore */ }
+      });
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 

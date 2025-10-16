@@ -1,5 +1,5 @@
 import React from 'react';
-import { Chat, Service } from '../../types';
+import { Chat } from '../../types';
 import { ChatInboxModal } from './ChatInboxModal';
 import { ChatWindow } from './ChatWindow';
 

@@ -23,12 +23,16 @@ import { AdminPanel } from './components/Admin/AdminPanel';
 import { MessageCircle } from 'lucide-react';
 import { useChatSection } from './components/Chat/useChatSection';
 import { getUserChats } from './services/getUserChats';
+import { useToast } from './contexts/ToastContext';
+import { bookingNotificationService } from './services/bookingNotificationService';
 
 type View = 'dashboard' | 'profile' | 'wallet' | 'services' | 'bookings' | 'admin';
 
 
 function AppContent() {
   const { user, loading, logout } = useAuth();
+  const { showBookingNotification } = useToast();
+  const [confirmLogout, setConfirmLogout] = useState(false);
   // Chat section state
   const { openInbox, ChatSectionUI } = useChatSection();
   const [unread, setUnread] = useState(0);
@@ -45,23 +49,52 @@ function AppContent() {
     }
   });
 
-  // Listen for unread count (simple: sum all chats' unread)
+  // Listen for unread count using lastSeen per chat
   useEffect(() => {
     if (!user) return;
-    let stop = false;
-    getUserChats(user.id).then(chats => {
-      let total = 0;
-      import('./services/chatService').then(cs => {
-        chats.forEach(chat => {
-          cs.chatService.subscribeMessages(chat.id, msgs => {
-            if (stop) return;
-            total += msgs.filter(m => m.sender_id !== user.id).length;
-            setUnread(total);
-          });
+    let cancelled = false;
+    const unsubs: Array<() => void> = [];
+    const perChatUnread: Record<string, number> = {};
+    const perChatSeen: Record<string, number> = {};
+
+    (async () => {
+      const chats = await getUserChats(user.id);
+      const cs = await import('./services/chatService');
+      for (const c of chats) {
+        // subscribe to chat doc to get lastSeen
+        const unsubDoc = cs.chatService.subscribeChatDoc(c.id, (doc) => {
+          if (cancelled) return;
+          const seen = doc?.lastSeen?.[user.id];
+          let ms = 0;
+          if (typeof seen === 'string') {
+            const parsed = Date.parse(seen);
+            ms = isNaN(parsed) ? 0 : parsed;
+          } else if (seen && typeof seen.toDate === 'function') {
+            ms = seen.toDate().getTime();
+          } else if (typeof seen === 'number') {
+            ms = seen;
+          }
+          perChatSeen[c.id] = ms;
         });
+        unsubs.push(unsubDoc);
+        // subscribe to messages and compute unread since lastSeen
+        const unsubMsgs = cs.chatService.subscribeMessages(c.id, (msgs) => {
+          if (cancelled) return;
+          const seenAt = perChatSeen[c.id] || 0;
+          perChatUnread[c.id] = msgs.filter(m => m.sender_id !== user.id && new Date(m.created_at).getTime() > seenAt).length;
+          const sum = Object.values(perChatUnread).reduce((a, b) => a + b, 0);
+          setUnread(sum);
+        });
+        unsubs.push(unsubMsgs);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      unsubs.forEach(u => {
+        try { u(); } catch {}
       });
-    });
-    return () => { stop = true; };
+    };
   }, [user?.id]);
 
   useEffect(() => {
@@ -75,6 +108,35 @@ function AppContent() {
     }
   }, [dark]);
 
+  // Listen for new booking notifications (provider only)
+  useEffect(() => {
+    if (!user) return;
+    
+    const unsub = bookingNotificationService.subscribeToProviderBookings(
+      user.id,
+      async (booking) => {
+        // Get requester details for the notification
+        const requesterName = booking.requester?.username || booking.requester?.email || 'A user';
+        const serviceTitle = booking.service?.title || 'your service';
+        
+        showBookingNotification(
+          '🔔 New Booking Request!',
+          `${requesterName} wants to book "${serviceTitle}". Check your bookings to respond.`
+        );
+        
+        // Optional: Play a notification sound
+        try {
+          const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBi6A0fDTgTEHHm7A7+OZSA0PVajk6qxYEwtDnNzyxW0iByh+zPDJfDUHGm+/7+CcSw8NUqXi5K5cFAxEnuD2yH0pBiuBzvLYiTcIGWi77emfTRAMUKfj8LZjHAY4kdfyzHksBSR3x/DdkEAKFF606OunVRULRp/g8r5sIQYugNHw04ExBx5uwO/jmUgND1Wo5OqsWBMLQ5zc8sVtIgcofszwyXw1BxpvwO/gmksPDlCn4uWuXBULRZzg8L1sIgYogdDw2oY1BxpvwPHgm0wQD1Oo4+muWhULRZ3f8r9uIwYugNHx2YU1BxptwPDfmUoODlKm4eStWxQKRJrb8sFuIwUugNDx2YU1Bxltv+3fnEoPDlGm4eOtXBUKQ5vb8MFuIwUugNDx2YU1BxltMjU+qrDvsVNUFhJ7utfr7+mQTQoVaqzj7bmORo8lRZ3b+uO7ZBtCk9rw4rVcFAo=');
+          audio.volume = 0.3;
+          audio.play().catch(() => {});
+        } catch {}
+      }
+    );
+
+    return () => unsub();
+  }, [user?.id, showBookingNotification]);
+
+  // Removed global Firebase permission error popups per request
 
 
   if (loading) {
@@ -214,7 +276,7 @@ function AppContent() {
               </button>
 
               <button
-                onClick={logout}
+                onClick={() => setConfirmLogout(true)}
                 className="flex items-center gap-2 px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition dark:hover:bg-red-900/20"
               >
                 <LogOut className="w-5 h-5" />
@@ -225,7 +287,7 @@ function AppContent() {
             {/* Mobile Logout Button */}
             <div className="md:hidden">
               <button
-                onClick={logout}
+                onClick={() => setConfirmLogout(true)}
                 className="flex items-center justify-center w-8 h-8 text-red-600 hover:bg-red-50 rounded-lg transition dark:hover:bg-red-900/20"
                 title="Logout"
               >
@@ -283,6 +345,21 @@ function AppContent() {
 
       {/* SOS Button - Always visible when logged in */}
       <SOSButton userLocation={userLocation} />
+      {confirmLogout && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-xl border border-gray-200 w-full max-w-sm p-5">
+            <div className="text-lg font-semibold text-gray-800 mb-2">Confirm Logout</div>
+            <div className="text-sm text-gray-600 mb-4">Are you sure you want to logout?</div>
+            <div className="flex items-center justify-end gap-2">
+              <button className="px-3 py-1.5 bg-gray-100 rounded" onClick={() => setConfirmLogout(false)}>Cancel</button>
+              <button
+                className="px-3 py-1.5 bg-red-600 text-white rounded"
+                onClick={() => { setConfirmLogout(false); logout(); }}
+              >Logout</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

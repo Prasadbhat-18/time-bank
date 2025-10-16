@@ -3,6 +3,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { X, Calendar, Clock } from 'lucide-react';
 import { Service } from '../../types';
 import { dataService } from '../../services/dataService';
+import { ChatWindow } from '../Chat/ChatWindow';
 
 interface BookingModalProps {
   service: Service;
@@ -17,6 +18,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({ service, onClose, on
   const [duration, setDuration] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showChat, setShowChat] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -66,6 +68,19 @@ export const BookingModal: React.FC<BookingModalProps> = ({ service, onClose, on
             {service.provider && (
               <p className="text-sm text-gray-500 mt-2">Provider: {service.provider.username}</p>
             )}
+            <div className="mt-3 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowChat(true)}
+                className="px-3 py-1.5 text-sm rounded bg-gray-100 hover:bg-gray-200"
+                title="Chat before booking"
+              >
+                Chat before booking
+              </button>
+              {showChat && (
+                <span className="text-xs text-gray-500">A chat window will open to discuss details</span>
+              )}
+            </div>
           </div>
 
           {error && (
@@ -160,6 +175,13 @@ export const BookingModal: React.FC<BookingModalProps> = ({ service, onClose, on
           </div>
         </form>
       </div>
+      {showChat && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-full max-w-md bg-white rounded-xl shadow-xl border border-gray-200">
+            <ChatWindow peerId={service.provider_id} service={service} onClose={() => setShowChat(false)} />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

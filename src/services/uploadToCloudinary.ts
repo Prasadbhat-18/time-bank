@@ -9,29 +9,75 @@
  * @param uploadPreset Optional Cloudinary upload preset (overrides env)
  * @returns URL of uploaded image
  */
+export interface UploadOptions {
+  onProgress?: (percent: number) => void;
+  signal?: AbortSignal;
+}
+
 export async function uploadToCloudinary(
   file: File,
   cloudName?: string,
-  uploadPreset?: string
+  uploadPreset?: string,
+  options?: UploadOptions
 ): Promise<string> {
-  const resolvedCloudName = cloudName || process.env.CLOUDINARY_CLOUD_NAME || 'diecgt687';
-  const resolvedUploadPreset = uploadPreset || process.env.CLOUDINARY_UPLOAD_PRESET || 'unsigned';
-  const url = `https://api.cloudinary.com/v1_1/${resolvedCloudName}/upload`;
+  const resolvedCloudName = cloudName || (import.meta as any).env?.VITE_CLOUDINARY_CLOUD_NAME || 'diecgt687';
+  const resolvedUploadPreset = uploadPreset || (import.meta as any).env?.VITE_CLOUDINARY_UPLOAD_PRESET || 'unsigned';
+  const url = `https://api.cloudinary.com/v1_1/${resolvedCloudName}/image/upload`;
+
+  // Use XHR when progress or cancelation is needed
+  if (options?.onProgress || options?.signal) {
+    return new Promise<string>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', url);
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const data = JSON.parse(xhr.responseText);
+            resolve(data.secure_url);
+          } catch (e) {
+            reject(new Error('Cloudinary response parse failed'));
+          }
+        } else {
+          try {
+            const data = JSON.parse(xhr.responseText);
+            reject(new Error('Cloudinary upload failed: ' + (data.error?.message || xhr.statusText)));
+          } catch {
+            reject(new Error('Cloudinary upload failed: ' + xhr.statusText));
+          }
+        }
+      };
+      xhr.onerror = () => reject(new Error('Network error during Cloudinary upload'));
+      xhr.onabort = () => reject(new Error('Upload canceled'));
+      if (xhr.upload && options?.onProgress) {
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            const pct = Math.round((e.loaded / e.total) * 100);
+            options.onProgress!(pct);
+          }
+        };
+      }
+      if (options?.signal) {
+        const abortHandler = () => xhr.abort();
+        options.signal.addEventListener('abort', abortHandler, { once: true });
+      }
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('upload_preset', resolvedUploadPreset);
+      xhr.send(fd);
+    });
+  }
+
+  // Fallback to fetch when no progress/cancel needed
   const formData = new FormData();
   formData.append('file', file);
   formData.append('upload_preset', resolvedUploadPreset);
-  const response = await fetch(url, {
-    method: 'POST',
-    body: formData,
-  });
+  const response = await fetch(url, { method: 'POST', body: formData });
   if (!response.ok) {
     let errorMsg = 'Cloudinary upload failed';
     try {
       const errorData = await response.json();
       errorMsg += ': ' + (errorData.error?.message || JSON.stringify(errorData));
-    } catch (e) {
-      // ignore
-    }
+    } catch {}
     console.error(errorMsg);
     throw new Error(errorMsg);
   }

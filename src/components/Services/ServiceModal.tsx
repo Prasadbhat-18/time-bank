@@ -1,4 +1,4 @@
-import { uploadToCloudinary } from '../../services/uploadToCloudinary';
+import { uploadToCloudinary, UploadOptions } from '../../services/uploadToCloudinary';
 
 // Use environment variable if available, else fallback to hardcoded
 const CLOUDINARY_CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || 'diecgt687';
@@ -29,12 +29,37 @@ export const ServiceModal: React.FC<ServiceModalProps> = ({ onClose }) => {
   const [creditsPerHour, setCreditsPerHour] = useState<number>(1.0);
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
+  const [fileProgress, setFileProgress] = useState<number[]>([]);
+  const [abortControllers, setAbortControllers] = useState<AbortController[]>([]);
   // Handle image file selection
-  // Allow multiple image selection and preview
+  // Allow multiple image selection with validation (max 10, image types, size <= 5MB)
+  const MAX_IMAGES = Number(import.meta.env.VITE_MAX_SERVICE_IMAGES || 10);
+  const MAX_SIZE_MB = 5;
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    setImageFiles(files);
-    setImagePreviews(files.map(file => URL.createObjectURL(file)));
+    const picked = Array.from(e.target.files || []);
+    if (picked.length === 0) return;
+    // Merge with existing but cap to MAX_IMAGES
+    const combined = [...imageFiles, ...picked];
+    const limited = combined.slice(0, MAX_IMAGES);
+    const acceptTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    const invalids: string[] = [];
+    const tooLarge: string[] = [];
+    const validFiles = limited.filter(f => {
+      if (!acceptTypes.includes(f.type)) { invalids.push(f.name); return false; }
+      if (f.size > MAX_SIZE_MB * 1024 * 1024) { tooLarge.push(f.name); return false; }
+      return true;
+    });
+    if (invalids.length) {
+      setError(`Some files are not supported types (jpg, png, webp, gif): ${invalids.join(', ')}`);
+    } else if (tooLarge.length) {
+      setError(`Some files exceed ${MAX_SIZE_MB}MB: ${tooLarge.join(', ')}`);
+    } else {
+      setError('');
+    }
+    setImageFiles(validFiles);
+    setImagePreviews(validFiles.map(file => URL.createObjectURL(file)));
+    setFileProgress(validFiles.map(() => 0));
+    setAbortControllers(validFiles.map(() => new AbortController()));
   };
 
   // Simple level rule: allow custom pricing once user has >= 5 reviews and rating >= 4.5
@@ -61,10 +86,24 @@ export const ServiceModal: React.FC<ServiceModalProps> = ({ onClose }) => {
       let imageUrls: string[] = [];
       if (imageFiles.length > 0) {
         setUploading(true);
-        for (let i = 0; i < imageFiles.length; i++) {
-          const url = await uploadToCloudinary(imageFiles[i], CLOUDINARY_CLOUD_NAME, CLOUDINARY_UPLOAD_PRESET);
+        const total = imageFiles.length;
+        for (let i = 0; i < total; i++) {
+          const controller = abortControllers[i] || new AbortController();
+          const opts: UploadOptions = {
+            signal: controller.signal,
+            onProgress: (p) => {
+              setFileProgress(prev => {
+                const next = [...prev];
+                next[i] = p;
+                // overall progress as average
+                const sum = next.reduce((a, b) => a + b, 0);
+                setUploadProgress(Math.round(sum / total));
+                return next;
+              });
+            }
+          };
+          const url = await uploadToCloudinary(imageFiles[i], CLOUDINARY_CLOUD_NAME, CLOUDINARY_UPLOAD_PRESET, opts);
           imageUrls.push(url);
-          setUploadProgress(Math.round(((i + 1) / imageFiles.length) * 100));
         }
         setUploading(false);
       }
@@ -93,11 +132,50 @@ export const ServiceModal: React.FC<ServiceModalProps> = ({ onClose }) => {
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         <div className="mb-4">
-          <label className="block font-medium mb-1">Service Images (multiple allowed)</label>
-          <input type="file" accept="image/*" multiple onChange={handleImageChange} />
-          <div className="flex gap-2 mt-2">
+          <div className="flex items-center justify-between">
+            <label className="block font-medium mb-1">Service Images (up to {MAX_IMAGES})</label>
+            <span className="text-sm text-gray-500">{imageFiles.length}/{MAX_IMAGES}</span>
+          </div>
+          <input
+            type="file"
+            accept="image/*"
+            multiple
+            onChange={handleImageChange}
+            disabled={imageFiles.length >= MAX_IMAGES}
+          />
+          <div className="grid grid-cols-5 gap-2 mt-3">
             {imagePreviews.map((src, i) => (
-              <img key={i} src={src} alt="preview" className="w-20 h-20 object-cover rounded" />
+              <div key={i} className="relative">
+                <img src={src} alt="preview" className="w-full h-20 object-cover rounded" />
+                {uploading ? (
+                  <div className="absolute inset-x-0 bottom-0 h-2 bg-black/10 rounded-b">
+                    <div className="h-2 bg-emerald-500 rounded-b" style={{ width: `${fileProgress[i] || 0}%` }} />
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // remove image i
+                      setImageFiles(prev => prev.filter((_, idx) => idx !== i));
+                      setImagePreviews(prev => prev.filter((_, idx) => idx !== i));
+                      setFileProgress(prev => prev.filter((_, idx) => idx !== i));
+                      setAbortControllers(prev => prev.filter((_, idx) => idx !== i));
+                    }}
+                    className="absolute top-1 right-1 px-1.5 py-0.5 text-xs bg-white/80 hover:bg-white rounded shadow"
+                  >
+                    Remove
+                  </button>
+                )}
+                {uploading && (fileProgress[i] || 0) < 100 && (
+                  <button
+                    type="button"
+                    onClick={() => abortControllers[i]?.abort()}
+                    className="absolute top-1 right-1 px-1.5 py-0.5 text-xs bg-white/80 hover:bg-white rounded shadow"
+                  >
+                    Cancel
+                  </button>
+                )}
+              </div>
             ))}
           </div>
           {uploading && (

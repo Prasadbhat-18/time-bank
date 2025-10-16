@@ -25,7 +25,25 @@ VITE_FIREBASE_MESSAGING_SENDER_ID=your_messaging_sender_id
 VITE_FIREBASE_APP_ID=your_app_id
 ```
 
-4. Restart the dev server after adding/updating `.env.local` so Vite picks up the new variables.
+4. **Deploy Firestore Rules** (Important!):
+```powershell
+# Install Firebase CLI
+npm install -g firebase-tools
+
+# Login to Firebase
+firebase login
+
+# Deploy rules
+firebase deploy --only firestore:rules
+
+# Or use the helper script
+.\deploy-rules.ps1   # Windows
+# ./deploy-rules.sh  # Mac/Linux
+```
+
+**See [FIRESTORE_RULES_FIX.md](./FIRESTORE_RULES_FIX.md) if you get permission errors.**
+
+5. Restart the dev server after adding/updating `.env.local` so Vite picks up the new variables.
 
 Verify it worked:
 - Open the browser console. You should see: `✅ Firebase initialized successfully`.

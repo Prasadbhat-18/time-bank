@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import crypto from 'crypto';
@@ -7,7 +8,7 @@ import fs from 'fs';
 
 // Basic configuration
 const PORT = Number(process.env.OTP_SERVER_PORT) || 4000;
-const app = express();
+const app: any = express();
 app.use(cors());
 app.use(express.json());
 

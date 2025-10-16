@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { dataService } from '../../services/dataService';
 import { User } from '../../types';
 import { User as UserIcon, Mail, Phone, MapPin } from 'lucide-react';
+// Chat is launched from Booking flow only
 
 interface ProfileModalProps {
   userId?: string;
@@ -12,6 +13,7 @@ interface ProfileModalProps {
 export const ProfileModal: React.FC<ProfileModalProps> = ({ userId, userObj, onClose }) => {
   const [profile, setProfile] = useState<User | null>(userObj ? (userObj as User) : null);
   const [loading, setLoading] = useState(false);
+  // Removed inline chat opener to reduce duplicates
 
   useEffect(() => {
     const load = async () => {
@@ -56,6 +58,8 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ userId, userObj, onC
               </div>
             </div>
 
+            {/* Chat entry removed here; use Booking flow*/}
+
             <div className="grid grid-cols-1 gap-2">
               <div className="flex items-center gap-2 text-sm text-gray-700"><Mail className="w-4 h-4 text-gray-400" />{profile.email || 'No email'}</div>
               <div className="flex items-center gap-2 text-sm text-gray-700"><Phone className="w-4 h-4 text-gray-400" />{profile.phone || 'No phone'}</div>
@@ -77,6 +81,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ userId, userObj, onC
           </div>
         )}
       </div>
+      {/* No chat modal here */}
     </div>
   );
 };

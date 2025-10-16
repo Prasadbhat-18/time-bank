@@ -6,7 +6,7 @@ import { dataService } from '../../services/dataService';
 import { ServiceModal } from './ServiceModal';
 import { BookingModal } from './BookingModal';
 import { ProfileModal } from '../Profile/ProfileModal';
-import { ChatWindow } from '../Chat/ChatWindow';
+// Chat entry is available only from BookingModal to avoid duplicates
 import { InfiniteCarousel } from './InfiniteCarousel';
 
 export const ServiceList: React.FC = () => {
@@ -17,15 +17,18 @@ export const ServiceList: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'offer' | 'request'>('all');
   const [filterCategory, setFilterCategory] = useState<string>('');
+  const [hideMine, setHideMine] = useState<boolean>(false);
+  const [minCredits, setMinCredits] = useState<string>('');
+  const [maxCredits, setMaxCredits] = useState<string>('');
   const [showServiceModal, setShowServiceModal] = useState(false);
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [selectedService, setSelectedService] = useState<Service | null>(null);
   const [profileToShow, setProfileToShow] = useState<{ id?: string; user?: any } | null>(null);
-  const [chatPeer, setChatPeer] = useState<{ peerId: string; service?: Service } | null>(null);
+  // Removed chatPeer; chat is opened from BookingModal only
 
   useEffect(() => {
     loadData();
-  }, [filterType, filterCategory, searchTerm, user?.id]);
+  }, [filterType, filterCategory, searchTerm, hideMine, minCredits, maxCredits, user?.id]);
 
   const loadData = async () => {
     setLoading(true);
@@ -59,7 +62,17 @@ export const ServiceList: React.FC = () => {
   const others = total - mine;
   console.log(`services: total=${total}, mine=${mine}, others=${others}`);
     
-    setServices(servicesData);
+    // Apply client-side additional filters
+    let filtered = [...servicesData];
+    if (hideMine && user?.id) {
+      filtered = filtered.filter(s => s.provider_id !== user.id);
+    }
+    const min = parseFloat(minCredits);
+    const max = parseFloat(maxCredits);
+    if (!isNaN(min)) filtered = filtered.filter(s => (s.credits_per_hour ?? 0) >= min);
+    if (!isNaN(max)) filtered = filtered.filter(s => (s.credits_per_hour ?? 0) <= max);
+
+    setServices(filtered);
     setSkills(skillsData);
     setLoading(false);
   };
@@ -101,7 +114,7 @@ export const ServiceList: React.FC = () => {
             />
           </div>
 
-          <div className="flex gap-3">
+          <div className="flex gap-3 flex-wrap">
             <select
               value={filterType}
               onChange={(e) => setFilterType(e.target.value as 'all' | 'offer' | 'request')}
@@ -124,6 +137,39 @@ export const ServiceList: React.FC = () => {
                 </option>
               ))}
             </select>
+
+            <label className="inline-flex items-center gap-2 text-sm text-gray-700 px-3 py-2 border border-gray-300 rounded-lg">
+              <input type="checkbox" checked={hideMine} onChange={(e) => setHideMine(e.target.checked)} />
+              Hide my services
+            </label>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                inputMode="decimal"
+                placeholder="Min credits"
+                value={minCredits}
+                onChange={(e) => setMinCredits(e.target.value)}
+                className="w-28 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+              />
+              <span className="text-gray-500">-</span>
+              <input
+                type="number"
+                inputMode="decimal"
+                placeholder="Max credits"
+                value={maxCredits}
+                onChange={(e) => setMaxCredits(e.target.value)}
+                className="w-28 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={() => { setFilterType('all'); setFilterCategory(''); setSearchTerm(''); setHideMine(false); setMinCredits(''); setMaxCredits(''); }}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50"
+            >
+              Reset
+            </button>
           </div>
         </div>
       </div>
@@ -250,14 +296,7 @@ export const ServiceList: React.FC = () => {
                         </button>
                       </div>
                     )}
-                    {service.provider_id !== user?.id && (
-                      <button
-                        onClick={() => setChatPeer({ peerId: service.provider_id, service })}
-                        className="ml-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 text-sm rounded-lg transition"
-                      >
-                        Chat
-                      </button>
-                    )}
+                    {/* Chat entry point moved into BookingModal pre-booking section */}
                   </div>
                 </div>
               </div>
@@ -297,13 +336,7 @@ export const ServiceList: React.FC = () => {
         />
       )}
 
-      {chatPeer && (
-        <ChatWindow
-          peerId={chatPeer.peerId}
-          service={chatPeer.service || undefined}
-          onClose={() => setChatPeer(null)}
-        />
-      )}
+      {/* Chat modal intentionally removed here; use BookingModal -> Chat before booking */}
     </div>
   );
 };
