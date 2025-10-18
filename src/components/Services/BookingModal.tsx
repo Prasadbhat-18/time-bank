@@ -22,6 +22,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({ service, onClose, on
   const [error, setError] = useState('');
   const [showChat, setShowChat] = useState(false);
   const [showBalanceModal, setShowBalanceModal] = useState(false);
+  const [showLimitWarning, setShowLimitWarning] = useState(false);
 
   // Check service balance
   const servicesCompleted = user?.services_completed || 0;
@@ -31,13 +32,6 @@ export const BookingModal: React.FC<BookingModalProps> = ({ service, onClose, on
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
-
-    // Check service balance
-    if (!canRequest) {
-      setError('You\'ve reached your service request limit. Please provide a service first.');
-      setShowBalanceModal(true);
-      return;
-    }
 
     setError('');
     setLoading(true);
@@ -56,7 +50,12 @@ export const BookingModal: React.FC<BookingModalProps> = ({ service, onClose, on
         confirmation_status: 'pending'
       });
 
-      onBooked();
+      // Show warning if user is approaching or has exceeded limit
+      if (!canRequest) {
+        setShowLimitWarning(true);
+      } else {
+        onBooked();
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to create booking. Please try again.');
     } finally {
@@ -66,55 +65,68 @@ export const BookingModal: React.FC<BookingModalProps> = ({ service, onClose, on
 
   const totalCredits = duration * service.credits_per_hour;
 
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl max-w-lg w-full">
-        <div className="border-b border-gray-100 px-6 py-4 flex items-center justify-between">
-          <h2 className="text-2xl font-bold text-gray-800">Book Service</h2>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg transition">
-            <X className="w-5 h-5 text-gray-600" />
-          </button>
-        </div>
+  // Handle closing the limit warning
+  const handleCloseLimitWarning = () => {
+    setShowLimitWarning(false);
+    onClose();
+  };
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          {!canRequest && (
-            <div className="p-4 bg-red-50 border-2 border-red-300 rounded-lg flex gap-3">
-              <div className="text-red-600 font-bold text-xl flex-shrink-0">⚠️</div>
-              <div>
-                <h4 className="font-bold text-red-800 mb-1">Service Request Limit Reached</h4>
-                <p className="text-sm text-red-700">
-                  You've reached your service request quota ({servicesRequested}/{servicesCompleted * 3}). 
-                  Please provide a service first to unlock more requests.
+  return (
+    <>
+      {/* Limit Reached Warning Modal */}
+      {showLimitWarning && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl">
+            <div className="p-6 text-center">
+              <div className="text-6xl mb-4">⚠️</div>
+              <h2 className="text-2xl font-bold text-gray-800 mb-2">Service Request Limit Reached</h2>
+              <p className="text-gray-600 mb-4">
+                You've successfully booked this service! However, you've reached your service request quota.
+              </p>
+              <div className="bg-amber-50 rounded-lg p-4 mb-6 text-left">
+                <p className="text-sm text-gray-700 mb-2">
+                  <span className="font-semibold">Current Ratio:</span> {servicesRequested}/{servicesCompleted * 3}
                 </p>
-                <button
-                  type="button"
-                  onClick={() => setShowBalanceModal(true)}
-                  className="mt-2 text-sm font-semibold text-red-700 hover:text-red-900 underline"
-                >
-                  View Details →
-                </button>
+                <p className="text-sm text-gray-700">
+                  <span className="font-semibold">To request more services:</span> Please provide a service first
+                </p>
               </div>
+              <button
+                onClick={handleCloseLimitWarning}
+                className="w-full px-6 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg font-semibold transition"
+              >
+                Got it!
+              </button>
+              <button
+                onClick={() => {
+                  setShowLimitWarning(false);
+                  setShowBalanceModal(true);
+                }}
+                className="w-full mt-2 px-6 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-semibold transition"
+              >
+                View Details
+              </button>
             </div>
-          )}
+          </div>
+        </div>
+      )}
+
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40 p-4">
+        <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+          <div className="border-b border-gray-100 px-6 py-4 flex items-center justify-between sticky top-0 bg-white">
+            <h2 className="text-2xl font-bold text-gray-800">Book Service</h2>
+            <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg transition">
+              <X className="w-5 h-5 text-gray-600" />
+            </button>
+          </div>
+
+          <form onSubmit={handleSubmit} className="p-6 space-y-6">
           <div className="bg-gray-50 rounded-lg p-4">
             <h3 className="font-semibold text-gray-800 mb-1">{service.title}</h3>
             <p className="text-sm text-gray-600">{service.description}</p>
             {service.provider && (
               <p className="text-sm text-gray-500 mt-2">Provider: {service.provider.username}</p>
             )}
-            <div className="mt-3 flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setShowChat(true)}
-                className="px-3 py-1.5 text-sm rounded bg-gray-100 hover:bg-gray-200"
-                title="Chat before booking"
-              >
-                Chat before booking
-              </button>
-              {showChat && (
-                <span className="text-xs text-gray-500">A chat window will open to discuss details</span>
-              )}
-            </div>
           </div>
 
           {error && (
@@ -195,20 +207,29 @@ export const BookingModal: React.FC<BookingModalProps> = ({ service, onClose, on
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-6 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition"
+              className="flex-1 px-6 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition font-medium"
             >
               Cancel
             </button>
             <button
+              type="button"
+              onClick={() => setShowChat(true)}
+              className="flex-1 px-6 py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition font-medium"
+            >
+              Chat Now
+            </button>
+            <button
               type="submit"
               disabled={loading}
-              className="flex-1 px-6 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 px-6 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed font-medium"
             >
-              {loading ? 'Sending Request...' : 'Request Service'}
+              {loading ? 'Booking...' : 'Book Now'}
             </button>
           </div>
         </form>
+        </div>
       </div>
+
       {showChat && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="w-full max-w-md bg-white rounded-xl shadow-xl border border-gray-200">
@@ -225,6 +246,6 @@ export const BookingModal: React.FC<BookingModalProps> = ({ service, onClose, on
         servicesRequested={servicesRequested}
         canRequest={canRequest}
       />
-    </div>
+    </>
   );
 };
