@@ -112,7 +112,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({ service, onClose, on
       )}
 
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40 p-4">
-        <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
           <div className="border-b border-gray-100 px-6 py-4 flex items-center justify-between sticky top-0 bg-white">
             <h2 className="text-2xl font-bold text-gray-800">Book Service</h2>
             <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg transition">
@@ -120,7 +120,10 @@ export const BookingModal: React.FC<BookingModalProps> = ({ service, onClose, on
             </button>
           </div>
 
-          <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          {/* Main Content: Split into form and chat */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6">
+            {/* Left Column: Booking Form */}
+            <form onSubmit={handleSubmit} className="space-y-6">
           <div className="bg-gray-50 rounded-lg p-4">
             <h3 className="font-semibold text-gray-800 mb-1">{service.title}</h3>
             <p className="text-sm text-gray-600">{service.description}</p>
@@ -213,10 +216,10 @@ export const BookingModal: React.FC<BookingModalProps> = ({ service, onClose, on
             </button>
             <button
               type="button"
-              onClick={() => setShowChat(true)}
+              onClick={() => setShowChat(!showChat)}
               className="flex-1 px-6 py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition font-medium"
             >
-              Chat Now
+              {showChat ? 'Hide Chat' : 'Chat Now'}
             </button>
             <button
               type="submit"
@@ -226,17 +229,24 @@ export const BookingModal: React.FC<BookingModalProps> = ({ service, onClose, on
               {loading ? 'Booking...' : 'Book Now'}
             </button>
           </div>
-        </form>
-        </div>
-      </div>
+            </form>
 
-      {showChat && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="w-full max-w-md bg-white rounded-xl shadow-xl border border-gray-200">
-            <ChatWindow peerId={service.provider_id} service={service} onClose={() => setShowChat(false)} />
+            {/* Right Column: Chat Panel */}
+            {showChat && (
+              <div className="hidden lg:flex flex-col border border-gray-200 rounded-lg overflow-hidden h-[600px]">
+                <ChatWindow peerId={service.provider_id} service={service} onClose={() => setShowChat(false)} />
+              </div>
+            )}
+
+            {/* Mobile Chat: Full width below form */}
+            {showChat && (
+              <div className="lg:hidden col-span-1 border border-gray-200 rounded-lg overflow-hidden h-[400px]">
+                <ChatWindow peerId={service.provider_id} service={service} onClose={() => setShowChat(false)} />
+              </div>
+            )}
           </div>
         </div>
-      )}
+      </div>
 
       {/* Service Balance Modal */}
       <ServiceBalanceModal

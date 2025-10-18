@@ -2,18 +2,18 @@ import React, { useEffect, useRef, useState } from 'react';
 import type { Chat, ChatMessage, Service } from '../../types';
 import { chatService } from '../../services/chatService';
 import { useE2EE } from '../../hooks/useE2EE';
-import { mediateTerms } from '../../services/aiMediator';
 import { useAuth } from '../../contexts/AuthContext';
-import { Send, Bot } from 'lucide-react';
+import { Send } from 'lucide-react';
 import { dataService } from '../../services/dataService';
 
 interface Props {
   peerId: string;
   service?: Service;
   onClose?: () => void;
+  embedded?: boolean; // When true, renders as embedded component, not full-screen overlay
 }
 
-export const ChatWindow: React.FC<Props> = ({ peerId, service, onClose }) => {
+export const ChatWindow: React.FC<Props> = ({ peerId, service, onClose, embedded: _embedded = false }) => {
   const { user } = useAuth();
   const { getOrCreateKeyPair, exportPublicJwk, importPublicJwk, deriveSharedKey, encrypt, decrypt } = useE2EE();
   const [chat, setChat] = useState<Chat | null>(null);
@@ -24,7 +24,6 @@ export const ChatWindow: React.FC<Props> = ({ peerId, service, onClose }) => {
   const pendingQueue = useRef<string[]>([]);
   const [peerName, setPeerName] = useState<string>('');
   const [sentTick, setSentTick] = useState<number>(0);
-  const [agreeing, setAgreeing] = useState(false);
   const [peerTyping, setPeerTyping] = useState(false);
   const typingThrottleRef = useRef<number>(0);
 
@@ -197,47 +196,6 @@ export const ChatWindow: React.FC<Props> = ({ peerId, service, onClose }) => {
     }
   };
 
-  const handleMediate = async () => {
-    if (!user || !chat) return;
-    // Use the last few messages (decrypted) as context
-    const last = (decryptedRef.current || []).slice(-10);
-    const dialogue = last.map((m) => `${m.sender_id === user.id ? 'Me' : 'Peer'}: ${m.text}`);
-    try {
-      const reply = await mediateTerms(dialogue, { serviceTitle: service?.title, participants: [user.username || user.email, peerId] });
-      // Send mediator reply as a system message but still encrypted with our key so only participants can read it
-      if (sharedKey) {
-        const enc = await encrypt(sharedKey, `AI Proposal:\n${reply}`);
-        await chatService.sendMessage(chat.id, {
-          sender_id: 'ai-mediator',
-          ciphertext: enc.ciphertext,
-          iv: enc.iv,
-          type: 'system',
-        });
-      }
-    } catch (e) {
-      console.error('AI mediator failed', e);
-    }
-  };
-
-  const handleAgree = async () => {
-    if (!user || !chat) return;
-    try {
-      setAgreeing(true);
-      const text = `Provider ${user.username || user.email || user.id} agreed to proceed.`;
-      if (sharedKey) {
-        const enc = await encrypt(sharedKey, text);
-        await chatService.sendMessage(chat.id, {
-          sender_id: user.id,
-          ciphertext: enc.ciphertext,
-          iv: enc.iv,
-          type: 'system',
-        });
-      }
-    } finally {
-      setAgreeing(false);
-    }
-  };
-
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
       <div className="w-full max-w-2xl bg-white rounded-xl shadow-xl border border-gray-200 flex flex-col max-h-[80vh]">
@@ -247,11 +205,6 @@ export const ChatWindow: React.FC<Props> = ({ peerId, service, onClose }) => {
             {service && <div className="text-sm text-gray-600">Regarding: {service.title}</div>}
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={handleMediate} className="px-3 py-1.5 rounded bg-emerald-600 text-white text-sm flex items-center gap-1">
-              <Bot className="w-4 h-4" /> Mediate
-            </button>
-            {/* Provider Agree button (visible to both, acts as a system marker) */}
-            <button onClick={handleAgree} disabled={agreeing} className="px-3 py-1.5 rounded bg-blue-600 text-white text-sm disabled:opacity-50">Agree</button>
             <button
               onClick={async () => {
                 if (user && chat) {
