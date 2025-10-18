@@ -2,6 +2,17 @@
 import { useAuth } from '../../contexts/AuthContext';
 import { Camera, Edit, Save, X, User, Mail, Phone, MapPin, Award, Clock, Shield, Plus, Trash2, PhoneCall, Lock } from 'lucide-react';
 import { EmergencyContact } from '../../types';
+import { LevelProgressCard, LevelPerkList, LevelBadge } from '../Level/LevelProgress';
+import { getLevelProgress, getLevelInfo } from '../../services/levelService';
+import { useGeolocation } from '../../hooks/useGeolocation';
+
+// Location type for geolocation
+interface Location {
+  lat: number;
+  lng: number;
+  accuracy?: number;
+  timestamp?: number;
+}
 
 export const ProfileView: React.FC = () => {
   const { user, updateUser } = useAuth();
@@ -35,6 +46,10 @@ export const ProfileView: React.FC = () => {
   const [pwError, setPwError] = useState('');
   const [pwLoading, setPwLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Geolocation hook
+  const { getCurrentLocation } = useGeolocation();
+  const [fetchingLocation, setFetchingLocation] = useState(false);
 
     // Load profile picture when user changes
     useEffect(() => {
@@ -77,21 +92,160 @@ export const ProfileView: React.FC = () => {
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    console.log('handleSave called');
     if (user) {
-      const updatedUser = {
-        ...user,
+      console.log('Current user:', user);
+      console.log('Edit data:', editData);
+      console.log('Emergency contacts:', emergencyContacts);
+      
+      const updatedFields = {
         username: editData.username,
         email: editData.email,
         phone: editData.phone,
         bio: editData.bio,
         skills: editData.skills.split(',').map((s: string) => s.trim()).filter((s: string) => s),
         location: editData.location,
-        emergency_contacts: emergencyContacts
+        emergency_contacts: emergencyContacts || []
       };
-      updateUser(updatedUser);
+      
+      console.log('Updated fields to save:', updatedFields);
+      
+      try {
+        await updateUser(updatedFields);
+        console.log('Profile updated successfully in AuthContext');
+        alert('Profile updated successfully!');
+        setEditing(false);
+      } catch (error: any) {
+        console.error('Failed to update profile:', error);
+        console.error('Error stack:', error.stack);
+        alert(`Failed to update profile: ${error.message || 'Unknown error'}. Please try again.`);
+      }
+    } else {
+      console.error('No user found when trying to save');
+      alert('Error: No user session found. Please log in again.');
     }
-    setEditing(false);
+  };
+
+  // Handler for Enter key press - save profile
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      // Allow Shift+Enter for textarea (bio), but Enter alone saves
+      if ((e.target as HTMLElement).tagName !== 'TEXTAREA') {
+        e.preventDefault();
+        handleSave();
+      }
+    }
+  };
+
+  // Handler to get current location
+  const handleGetLocation = async () => {
+    console.log('handleGetLocation called');
+    setFetchingLocation(true);
+    try {
+      console.log('Requesting current location...');
+      
+      // Try to get location with a fallback mechanism
+      let loc;
+      try {
+        // First try with high accuracy
+        loc = await getCurrentLocation();
+      } catch (error: any) {
+        console.warn('High accuracy location failed, trying with lower accuracy...', error);
+        
+        // Fallback: try with lower accuracy and shorter timeout
+        loc = await new Promise<Location>((resolve, reject) => {
+          if (!navigator.geolocation) {
+            reject(new Error('Geolocation is not supported by this browser'));
+            return;
+          }
+
+          navigator.geolocation.getCurrentPosition(
+            (position) => {
+              resolve({
+                lat: position.coords.latitude,
+                lng: position.coords.longitude,
+                accuracy: position.coords.accuracy,
+                timestamp: position.timestamp
+              });
+            },
+            (error) => {
+              reject(new Error(error.message));
+            },
+            {
+              enableHighAccuracy: false, // Lower accuracy but faster
+              timeout: 15000, // 15 seconds
+              maximumAge: 60000 // Accept cached location up to 1 minute old
+            }
+          );
+        });
+      }
+      
+      console.log('Location received:', loc);
+      
+      if (loc) {
+        console.log('Reverse geocoding coordinates:', loc.lat, loc.lng);
+        const address = await reverseGeocode(loc.lat, loc.lng);
+        console.log('Address resolved:', address);
+        setEditData({ ...editData, location: address });
+        alert(`Location detected: ${address}`);
+      } else {
+        console.warn('No location data received');
+        alert('No location data received. Please try again or enter manually.');
+      }
+    } catch (error: any) {
+      console.error('Failed to get location:', error);
+      alert(`Failed to get your location: ${error.message || 'Unknown error'}. Please enter manually.`);
+    } finally {
+      setFetchingLocation(false);
+    }
+  };
+
+  // Simple reverse geocoding using Nominatim (OpenStreetMap)
+  const reverseGeocode = async (lat: number, lng: number): Promise<string> => {
+    try {
+      console.log('Fetching address from Nominatim API...');
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1`,
+        {
+          headers: {
+            'User-Agent': 'TimeBank-App/1.0'
+          }
+        }
+      );
+      
+      if (!response.ok) {
+        console.error('Nominatim API error:', response.status, response.statusText);
+        return `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+      }
+      
+      const data = await response.json();
+      console.log('Nominatim response:', data);
+      
+      // Create a more readable address
+      const address = data.address;
+      let formattedAddress = data.display_name;
+      
+      if (address) {
+        // Try to create a shorter, more user-friendly address
+        const parts = [];
+        if (address.road) parts.push(address.road);
+        if (address.city) parts.push(address.city);
+        else if (address.town) parts.push(address.town);
+        else if (address.village) parts.push(address.village);
+        if (address.state) parts.push(address.state);
+        if (address.country) parts.push(address.country);
+        
+        if (parts.length > 0) {
+          formattedAddress = parts.join(', ');
+        }
+      }
+      
+      return formattedAddress || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+    } catch (error) {
+      console.error('Reverse geocoding failed:', error);
+      return `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+    }
   };
 
   const handleAddEmergencyContact = () => {
@@ -224,7 +378,10 @@ export const ProfileView: React.FC = () => {
 
             {/* Profile Info */}
             <div className="flex-1 text-center sm:text-left sm:self-center">
-              <h1 className="text-2xl md:text-3xl font-bold text-gray-800 mb-1 md:mb-2 leading-tight">{user.username}</h1>
+              <div className="flex items-center justify-center sm:justify-start gap-3 mb-2">
+                <h1 className="text-2xl md:text-3xl font-bold text-gray-800 leading-tight">{user.username}</h1>
+                <LevelBadge level={user.level || 1} size="md" showTitle={false} />
+              </div>
               <p className="text-sm md:text-base text-gray-600 mb-3 md:mb-4 px-4 sm:px-0">{user.bio || 'No bio added yet'}</p>
               <div className="flex flex-wrap gap-2 justify-center sm:justify-start">
                 {user.skills?.map((skill: string, index: number) => (
@@ -288,6 +445,7 @@ export const ProfileView: React.FC = () => {
                   type="text"
                   value={editData.username}
                   onChange={(e) => setEditData({ ...editData, username: e.target.value })}
+                  onKeyDown={handleKeyDown}
                   className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                 />
               ) : (
@@ -305,6 +463,7 @@ export const ProfileView: React.FC = () => {
                   type="email"
                   value={editData.email}
                   onChange={(e) => setEditData({ ...editData, email: e.target.value })}
+                  onKeyDown={handleKeyDown}
                   className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                 />
               ) : (
@@ -322,6 +481,7 @@ export const ProfileView: React.FC = () => {
                   type="tel"
                   value={editData.phone}
                   onChange={(e) => setEditData({ ...editData, phone: e.target.value })}
+                  onKeyDown={handleKeyDown}
                   className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                   placeholder="Enter phone number"
                 />
@@ -336,13 +496,29 @@ export const ProfileView: React.FC = () => {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
               {editing ? (
-                <input
-                  type="text"
-                  value={editData.location}
-                  onChange={(e) => setEditData({ ...editData, location: e.target.value })}
-                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-                  placeholder="Enter your location"
-                />
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={editData.location}
+                    onChange={(e) => setEditData({ ...editData, location: e.target.value })}
+                    onKeyDown={handleKeyDown}
+                    className="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                    placeholder="Enter your location"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleGetLocation}
+                    disabled={fetchingLocation}
+                    className="px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    title="Get current location"
+                  >
+                    {fetchingLocation ? (
+                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      <MapPin className="w-5 h-5" />
+                    )}
+                  </button>
+                </div>
               ) : (
                 <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
                   <MapPin className="w-4 h-4 text-gray-400" />
@@ -384,6 +560,7 @@ export const ProfileView: React.FC = () => {
                   type="text"
                   value={editData.skills}
                   onChange={(e) => setEditData({ ...editData, skills: e.target.value })}
+                  onKeyDown={handleKeyDown}
                   className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                   placeholder="Enter skills separated by commas"
                 />
@@ -613,6 +790,33 @@ export const ProfileView: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Level Progress Section */}
+      {user && (() => {
+        const currentExperience = user.experience_points || 0;
+        const servicesCompleted = user.services_completed || 0;
+        const currentLevel = user.level || 1;
+        const progress = getLevelProgress(currentExperience, servicesCompleted);
+        const levelInfo = getLevelInfo(currentLevel);
+
+        return (
+          <>
+            {/* Level Progress Card */}
+            <div>
+              {levelInfo && <LevelProgressCard progress={progress} currentLevelInfo={levelInfo} />}
+            </div>
+
+            {/* All Unlocked Perks */}
+            <div className="bg-gradient-to-br from-slate-900 via-indigo-900 to-purple-900 rounded-2xl shadow-lg p-6 border-2 border-cyan-500/30"
+              style={{
+                boxShadow: '0 0 40px rgba(34, 211, 238, 0.2)'
+              }}
+            >
+              <LevelPerkList perks={progress.unlockedPerks} />
+            </div>
+          </>
+        );
+      })()}
 
       {/* Activity Stats */}
       <div className="bg-white rounded-xl shadow-lg p-4 md:p-6">

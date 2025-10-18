@@ -19,6 +19,11 @@ export interface User {
   reputation_score: number;
   total_reviews: number;
   created_at: string;
+  // Level system fields
+  level?: number;
+  experience_points?: number;
+  services_completed?: number;
+  custom_credits_enabled?: boolean; // Unlocked at level 5
 }
 
 export interface TimeCredit {
@@ -123,4 +128,35 @@ export interface ChatMessage {
   iv: string; // base64
   created_at: string;
   type?: 'text' | 'system';
+}
+
+// Level System Types
+export interface UserLevel {
+  level: number;
+  title: string;
+  minExperience: number;
+  maxExperience: number;
+  servicesRequired: number;
+  perks: LevelPerk[];
+  badge: string;
+  color: string;
+}
+
+export interface LevelPerk {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  type: 'visibility' | 'credits' | 'custom_pricing' | 'priority' | 'badge' | 'discount';
+  value?: number | string;
+}
+
+export interface LevelProgress {
+  currentLevel: number;
+  currentExperience: number;
+  experienceToNextLevel: number;
+  progressPercentage: number;
+  servicesCompleted: number;
+  nextLevel?: UserLevel;
+  unlockedPerks: LevelPerk[];
 }

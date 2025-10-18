@@ -181,9 +181,53 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             total_reviews: 25,
             created_at: new Date('2024-01-01').toISOString(),
             phone: '+1-555-0100',
+            level: 7,
+            experience_points: 5500,
+            services_completed: 100,
+            custom_credits_enabled: true,
           };
           setUser(officialUser);
           saveUserToStorage(officialUser);
+          return;
+        }
+        if (e === 'level5@timebank.com' && password === 'level5demo') {
+          const level5User: User = {
+            id: 'level5-demo',
+            email: 'level5@timebank.com',
+            username: 'time_master_demo',
+            bio: 'Level 5 Time Master - I have unlocked custom pricing! Offering premium services with competitive rates.',
+            avatar_url: 'https://images.pexels.com/photos/1222271/pexels-photo-1222271.jpeg?auto=compress&cs=tinysrgb&w=200',
+            phone: '+1-555-LEVEL5',
+            reputation_score: 4.8,
+            total_reviews: 28,
+            created_at: new Date('2024-01-10').toISOString(),
+            level: 5,
+            experience_points: 1250,
+            services_completed: 25,
+            custom_credits_enabled: true,
+          };
+          setUser(level5User);
+          saveUserToStorage(level5User);
+          return;
+        }
+        if (e === 'level7@timebank.com' && password === 'level7demo') {
+          const level7User: User = {
+            id: 'level7-demo',
+            email: 'level7@timebank.com',
+            username: 'time_immortal_demo',
+            bio: 'Level 7 Time Immortal - Elite provider with maximum perks and legendary status. Mentoring available!',
+            avatar_url: 'https://images.pexels.com/photos/774909/pexels-photo-774909.jpeg?auto=compress&cs=tinysrgb&w=200',
+            phone: '+1-555-LEVEL7',
+            reputation_score: 5.0,
+            total_reviews: 82,
+            created_at: new Date('2023-12-01').toISOString(),
+            level: 7,
+            experience_points: 6500,
+            services_completed: 95,
+            custom_credits_enabled: true,
+          };
+          setUser(level7User);
+          saveUserToStorage(level7User);
           return;
         }
         // Re-throw original error if not a mock credential
@@ -209,9 +253,57 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           total_reviews: 25,
           created_at: new Date('2024-01-01').toISOString(),
           phone: '+1-555-0100',
+          level: 7,
+          experience_points: 5500,
+          services_completed: 100,
+          custom_credits_enabled: true,
         };
         setUser(officialUser);
         saveUserToStorage(officialUser);
+        return;
+      }
+
+      // Level 5 demo account
+      if (email === 'level5@timebank.com' && password === 'level5demo') {
+        const level5User: User = {
+          id: 'level5-demo',
+          email: 'level5@timebank.com',
+          username: 'time_master_demo',
+          bio: 'Level 5 Time Master - I have unlocked custom pricing! Offering premium services with competitive rates.',
+          avatar_url: 'https://images.pexels.com/photos/1222271/pexels-photo-1222271.jpeg?auto=compress&cs=tinysrgb&w=200',
+          phone: '+1-555-LEVEL5',
+          reputation_score: 4.8,
+          total_reviews: 28,
+          created_at: new Date('2024-01-10').toISOString(),
+          level: 5,
+          experience_points: 1250,
+          services_completed: 25,
+          custom_credits_enabled: true,
+        };
+        setUser(level5User);
+        saveUserToStorage(level5User);
+        return;
+      }
+
+      // Level 7 demo account
+      if (email === 'level7@timebank.com' && password === 'level7demo') {
+        const level7User: User = {
+          id: 'level7-demo',
+          email: 'level7@timebank.com',
+          username: 'time_immortal_demo',
+          bio: 'Level 7 Time Immortal - Elite provider with maximum perks and legendary status. Mentoring available!',
+          avatar_url: 'https://images.pexels.com/photos/774909/pexels-photo-774909.jpeg?auto=compress&cs=tinysrgb&w=200',
+          phone: '+1-555-LEVEL7',
+          reputation_score: 5.0,
+          total_reviews: 82,
+          created_at: new Date('2023-12-01').toISOString(),
+          level: 7,
+          experience_points: 6500,
+          services_completed: 95,
+          custom_credits_enabled: true,
+        };
+        setUser(level7User);
+        saveUserToStorage(level7User);
         return;
       }
 
@@ -367,124 +459,32 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const loginWithGoogle = async () => {
-    if (isFirebaseConfigured() && auth) {
-      try {
-        const user = await firebaseService.loginWithGoogle();
-        if (user) {
-          setUser(user);
-          saveUserToStorage(user);
-        }
-      } catch (error: any) {
+    // Check Firebase is configured
+    if (!isFirebaseConfigured()) {
+      throw new Error('Firebase is not configured. Please check your .env.local file has valid Firebase credentials.');
+    }
+    
+    try {
+      const user = await firebaseService.loginWithGoogle();
+      if (user) {
+        setUser(user);
+        saveUserToStorage(user);
+      } else {
+        throw new Error('Failed to get user from Google login');
+      }
+    } catch (error: any) {
+      console.error('Google login error:', error);
+      // Provide more helpful error messages
+      if (error.code === 'auth/popup-blocked') {
+        throw new Error('Google login popup was blocked. Please allow popups for this site.');
+      }
+      if (error.code === 'auth/popup-closed-by-user') {
+        throw new Error('Google login was cancelled.');
+      }
+      if (error.message?.includes('Firebase')) {
         throw error;
       }
-    } else {
-      // Fallback: keep existing mock popup flow
-      return new Promise<void>((resolve, reject) => {
-        // existing mock popup implementation left intact for offline/demo mode
-        const popup = window.open('', 'google-auth', 'width=500,height=600,scrollbars=yes,resizable=yes');
-        
-        if (!popup) {
-          reject(new Error('Popup blocked. Please allow popups for this site.'));
-          return;
-        }
-
-        popup.document.write(`
-          <html>
-            <head>
-              <title>Sign in with Google</title>
-              <style>
-                body { font-family: Arial, sans-serif; padding: 40px; text-align: center; background: #f8f9fa; }
-                .container { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); max-width: 400px; margin: 0 auto; }
-                .google-logo { width: 20px; height: 20px; margin-right: 10px; }
-                .btn { background: #4285f4; color: white; border: none; padding: 12px 24px; border-radius: 4px; cursor: pointer; font-size: 16px; margin: 10px; }
-                .btn:hover { background: #3367d6; }
-                .demo-accounts { margin-top: 20px; }
-                .demo-btn { background: #34a853; margin: 5px; padding: 8px 16px; font-size: 14px; }
-              </style>
-            </head>
-            <body>
-              <div class="container">
-                <h2>Sign in with Google</h2>
-                <p>Choose a demo Google account or enter your own:</p>
-                
-                <div class="demo-accounts">
-                  <button class="btn demo-btn" onclick="selectAccount('demo.google@gmail.com', 'Demo Google User')">demo.google@gmail.com</button>
-                </div>
-                
-                <div style="margin: 20px 0; padding: 20px; border: 1px solid #ddd; border-radius: 4px;">
-                  <h3>Or create custom account:</h3>
-                  <input type="email" id="customEmail" placeholder="Enter Gmail address" style="width: 100%; padding: 10px; margin: 5px 0; border: 1px solid #ddd; border-radius: 4px;">
-                  <input type="text" id="customName" placeholder="Enter your name" style="width: 100%; padding: 10px; margin: 5px 0; border: 1px solid #ddd; border-radius: 4px;">
-                  <button class="btn" onclick="createCustomAccount()">Create Account</button>
-                </div>
-                
-                <button onclick="window.close()" style="background: #ea4335; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">Cancel</button>
-              </div>
-              
-              <script>
-                function selectAccount(email, name) {
-                  window.opener.postMessage({
-                    type: 'GOOGLE_AUTH_SUCCESS',
-                    user: {
-                      email: email,
-                      name: name,
-                      picture: 'https://lh3.googleusercontent.com/a/default-user=s96-c'
-                    }
-                  }, '*');
-                  window.close();
-                }
-                
-                function createCustomAccount() {
-                  const email = document.getElementById('customEmail').value;
-                  const name = document.getElementById('customName').value;
-                  
-                  if (!email || !name) {
-                    alert('Please enter both email and name');
-                    return;
-                  }
-                  
-                  if (!email.includes('@gmail.com')) {
-                    alert('Please enter a valid Gmail address');
-                    return;
-                  }
-                  
-                  selectAccount(email, name);
-                }
-              </script>
-            </body>
-          </html>
-        `);
-
-        const handleMessage = (event: MessageEvent) => {
-          if (event.data.type === 'GOOGLE_AUTH_SUCCESS') {
-            const { user: googleUser } = event.data;
-            const newUser: User = {
-              id: `google-${Date.now()}`,
-              email: googleUser.email,
-              username: googleUser.name.replace(/\s+/g, '_').toLowerCase(),
-              bio: `TimeBank user authenticated with Google account`,
-              avatar_url: googleUser.picture,
-              reputation_score: 5.0,
-              total_reviews: 0,
-              created_at: new Date().toISOString()
-            };
-            setUser(newUser);
-            saveUserToStorage(newUser);
-            window.removeEventListener('message', handleMessage);
-            resolve();
-          }
-        };
-
-        window.addEventListener('message', handleMessage);
-
-        const checkClosed = setInterval(() => {
-          if (popup.closed) {
-            clearInterval(checkClosed);
-            window.removeEventListener('message', handleMessage);
-            reject(new Error('Authentication cancelled'));
-          }
-        }, 1000);
-      });
+      throw new Error(`Google login failed: ${error.message || 'Unknown error'}`);
     }
   };
 
@@ -527,6 +527,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const logout = () => {
     if (isFirebaseConfigured() && auth) {
       firebaseService.logout().catch(() => {});
+      setUser(null);
+      setFirebaseUser(null);
+      saveUserToStorage(null);
     } else {
       setUser(null);
       saveUserToStorage(null);

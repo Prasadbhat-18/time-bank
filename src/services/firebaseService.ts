@@ -49,6 +49,11 @@ class FirebaseService {
           reputation_score: 5.0,
           total_reviews: 0,
           created_at: new Date().toISOString(),
+          // Level system fields
+          level: 1,
+          experience_points: 0,
+          services_completed: 0,
+          custom_credits_enabled: false,
         } as User;
       } catch (error: any) {
         if (error.code === 'permission-denied' || /permission/i.test(error.message || '')) {
@@ -61,6 +66,11 @@ class FirebaseService {
             reputation_score: 5.0,
             total_reviews: 0,
             created_at: new Date().toISOString(),
+            // Level system fields
+            level: 1,
+            experience_points: 0,
+            services_completed: 0,
+            custom_credits_enabled: false,
           } as User;
         }
         throw error;
@@ -97,24 +107,49 @@ class FirebaseService {
   }
 
   async register(email: string, password: string, username: string): Promise<User> {
-    const cred = await createUserWithEmailAndPassword(auth, email, password);
-    const uid = cred.user.uid;
-    const userRef = doc(db, 'users', uid);
-    const data = {
-      email,
-      username,
-      bio: '',
-      reputation_score: 5.0,
-      total_reviews: 0,
-      created_at: new Date().toISOString(),
-      signup_bonus: 10,
-    };
+    if (!auth) {
+      throw new Error('❌ Firebase is not configured. Please check your VITE_FIREBASE_* environment variables in .env file. See FIREBASE_AUTH_FIX.md for help.');
+    }
     try {
-      await setDoc(userRef, data);
-      return mapFirebaseUserToUser(uid, data);
+      const cred = await createUserWithEmailAndPassword(auth, email, password);
+      const uid = cred.user.uid;
+      const userRef = doc(db, 'users', uid);
+      const data = {
+        email,
+        username,
+        bio: '',
+        reputation_score: 5.0,
+        total_reviews: 0,
+        created_at: new Date().toISOString(),
+        signup_bonus: 10,
+        // Level system fields
+        level: 1,
+        experience_points: 0,
+        services_completed: 0,
+        custom_credits_enabled: false,
+      };
+      try {
+        await setDoc(userRef, data);
+        return mapFirebaseUserToUser(uid, data);
+      } catch (error: any) {
+        if (error.code === 'permission-denied' || /permission/i.test(error.message || '')) {
+          throw new Error('❌ Firestore permission error: Your Firestore rules may not allow writes. Check FIREBASE_AUTH_FIX.md for the correct rules to use.');
+        }
+        throw error;
+      }
     } catch (error: any) {
-      if (error.code === 'permission-denied' || /permission/i.test(error.message || '')) {
-        throw new Error('Firestore permission error while creating user: check your Firestore rules (Missing or insufficient permissions)');
+      const code = error.code || '';
+      if (code === 'auth/email-already-in-use') {
+        throw new Error('This email is already registered. Try logging in or use a different email.');
+      }
+      if (code === 'auth/weak-password') {
+        throw new Error('Password is too weak. Use at least 6 characters.');
+      }
+      if (code === 'auth/invalid-email') {
+        throw new Error('Email address is not valid.');
+      }
+      if (code === 'auth/operation-not-allowed') {
+        throw new Error('❌ Email/password sign-up is not enabled in Firebase Console. Enable it in Authentication → Sign-in method.');
       }
       throw error;
     }
@@ -150,6 +185,11 @@ class FirebaseService {
         reputation_score: 5.0,
         total_reviews: 0,
         created_at: new Date().toISOString(),
+        // Level system fields
+        level: 1,
+        experience_points: 0,
+        services_completed: 0,
+        custom_credits_enabled: false,
       };
       try {
         await setDoc(doc(db, 'users', uid), data);
@@ -191,7 +231,18 @@ class FirebaseService {
 
   async updateProfile(userId: string, updates: Partial<User>): Promise<User> {
     const userRef = doc(db, 'users', userId);
-    const updatePayload = { ...updates, updated_at: serverTimestamp() };
+    
+    // First, check if user has level system fields, add if missing (migration for old users)
+    const userDoc = await getDoc(userRef);
+    const userData = userDoc.data() || {};
+    
+    const ensureLevelFields: any = {};
+    if (userData.level === undefined) ensureLevelFields.level = 1;
+    if (userData.experience_points === undefined) ensureLevelFields.experience_points = 0;
+    if (userData.services_completed === undefined) ensureLevelFields.services_completed = 0;
+    if (userData.custom_credits_enabled === undefined) ensureLevelFields.custom_credits_enabled = false;
+    
+    const updatePayload = { ...ensureLevelFields, ...updates, updated_at: serverTimestamp() };
     await updateDoc(userRef, updatePayload);
     const updated = await getDoc(userRef);
     return mapFirebaseUserToUser(userId, updated.data() || {});

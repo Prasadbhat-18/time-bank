@@ -62,8 +62,9 @@ export const ServiceModal: React.FC<ServiceModalProps> = ({ onClose }) => {
     setAbortControllers(validFiles.map(() => new AbortController()));
   };
 
-  // Simple level rule: allow custom pricing once user has >= 5 reviews and rating >= 4.5
-  const canSetCustomCredits = !!user && user.total_reviews >= 5 && user.reputation_score >= 4.5;
+  // Level-based custom pricing: Level 5+ users can set their own rates
+  const userLevel = user?.level || 1;
+  const canSetCustomCredits = userLevel >= 5 || (!!user && user.total_reviews >= 5 && user.reputation_score >= 4.5);
 
   useEffect(() => {
     loadSkills();
@@ -196,20 +197,44 @@ export const ServiceModal: React.FC<ServiceModalProps> = ({ onClose }) => {
         </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Credits per hour</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Credits per hour
+                    {userLevel >= 5 && (
+                      <span className="ml-2 px-2 py-0.5 text-xs font-bold bg-gradient-to-r from-amber-400 to-orange-500 text-white rounded-full">
+                        🏆 Level {userLevel} - Custom Pricing Unlocked
+                      </span>
+                    )}
+                  </label>
                   {canSetCustomCredits ? (
-                    <input
-                      type="number"
-                      min={0.5}
-                      step={0.5}
-                      value={creditsPerHour}
-                      onChange={(e) => setCreditsPerHour(Number(e.target.value))}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
-                    />
+                    <div>
+                      <input
+                        type="number"
+                        min={0.5}
+                        step={0.5}
+                        value={creditsPerHour}
+                        onChange={(e) => setCreditsPerHour(Number(e.target.value))}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                      />
+                      <p className="mt-1 text-xs text-emerald-600">
+                        ✨ You can set your own rate! Your level perks give you pricing freedom.
+                      </p>
+                    </div>
                   ) : (
-                    <div className="text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded-lg p-3">
-                      You currently earn at the default rate of <span className="font-semibold">1.0 credit/hr</span>.
-                      Reach <span className="font-semibold">level</span> (≥ 5 reviews, rating ≥ 4.5) to set your own rate.
+                    <div className="text-sm text-gray-600 bg-gradient-to-br from-gray-50 to-blue-50 border border-blue-200 rounded-lg p-4">
+                      <div className="flex items-start gap-3">
+                        <span className="text-2xl">🔒</span>
+                        <div>
+                          <p className="font-semibold text-gray-800 mb-1">Default Rate: 1.0 credit/hr</p>
+                          <p className="text-xs">
+                            Reach <span className="font-bold text-blue-600">Level 5</span> (25 services completed) to unlock custom pricing!
+                          </p>
+                          <div className="mt-2 pt-2 border-t border-blue-200">
+                            <p className="text-xs text-gray-500">
+                              Current: Level {userLevel} • Services: {user?.services_completed || 0}/25
+                            </p>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>

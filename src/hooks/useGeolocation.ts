@@ -78,7 +78,7 @@ export function useGeolocation() {
             },
             {
               enableHighAccuracy: true,
-              timeout: 10000,
+              timeout: 30000, // Increased from 10s to 30s
               maximumAge: 30000 // Allow 30 second old readings
             }
           );
@@ -109,7 +109,7 @@ export function useGeolocation() {
         },
         {
           enableHighAccuracy: true,
-          timeout: 15000,
+          timeout: 30000, // Increased from 15s to 30s
           maximumAge: 0 // Always get fresh location
         }
       );
@@ -131,11 +131,55 @@ export function useGeolocation() {
     requestLocationPermission();
   }, [requestLocationPermission]);
 
+  const getCurrentLocation = useCallback((): Promise<Location> => {
+    return new Promise((resolve, reject) => {
+      if (!navigator.geolocation) {
+        reject(new Error('Geolocation is not supported by this browser'));
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const newLocation: Location = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+            accuracy: position.coords.accuracy,
+            timestamp: position.timestamp
+          };
+          setState(prev => ({ ...prev, location: newLocation, error: null }));
+          resolve(newLocation);
+        },
+        (error) => {
+          let errorMessage = 'Unable to retrieve location';
+          switch (error.code) {
+            case error.PERMISSION_DENIED:
+              errorMessage = 'Location access denied';
+              break;
+            case error.POSITION_UNAVAILABLE:
+              errorMessage = 'Location information unavailable';
+              break;
+            case error.TIMEOUT:
+              errorMessage = 'Location request timed out';
+              break;
+          }
+          setState(prev => ({ ...prev, error: errorMessage }));
+          reject(new Error(errorMessage));
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 30000, // Increased from 10s to 30s for slower GPS
+          maximumAge: 0
+        }
+      );
+    });
+  }, []);
+
   return {
     location: state.location,
     error: state.error,
     loading: state.loading,
     permissionStatus: state.permissionStatus,
-    refreshLocation
+    refreshLocation,
+    getCurrentLocation
   };
 }
