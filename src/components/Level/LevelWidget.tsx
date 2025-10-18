@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Trophy, Star, TrendingUp, Zap } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { getLevelProgress, getLevelInfo } from '../../services/levelService';
+import LevelSystemModal from './LevelSystemModal';
 
 interface LevelWidgetProps {
   onViewProfile?: () => void;
@@ -9,6 +10,7 @@ interface LevelWidgetProps {
 
 export const LevelWidget: React.FC<LevelWidgetProps> = ({ onViewProfile }) => {
   const { user } = useAuth();
+  const [showModal, setShowModal] = useState(false);
 
   if (!user) return null;
 
@@ -108,6 +110,20 @@ export const LevelWidget: React.FC<LevelWidgetProps> = ({ onViewProfile }) => {
       <div className="mt-2 text-xs text-white/50 text-center group-hover:text-white/70 transition">
         Click to view full progress →
       </div>
+
+      {/* Help Button */}
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          setShowModal(true);
+        }}
+        className="mt-3 w-full py-2 px-3 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-semibold text-white/80 hover:text-white transition-all flex items-center justify-center gap-2"
+      >
+        <Zap size={14} />
+        Learn Level System
+      </button>
+
+      <LevelSystemModal isOpen={showModal} onClose={() => setShowModal(false)} />
     </div>
   );
 };

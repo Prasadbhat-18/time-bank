@@ -3,16 +3,9 @@ import { useAuth } from '../../contexts/AuthContext';
 import { Camera, Edit, Save, X, User, Mail, Phone, MapPin, Award, Clock, Shield, Plus, Trash2, PhoneCall, Lock } from 'lucide-react';
 import { EmergencyContact } from '../../types';
 import { LevelProgressCard, LevelPerkList, LevelBadge } from '../Level/LevelProgress';
+import LevelProgressDetail from '../Level/LevelProgressDetail';
 import { getLevelProgress, getLevelInfo } from '../../services/levelService';
 import { useGeolocation } from '../../hooks/useGeolocation';
-
-// Location type for geolocation
-interface Location {
-  lat: number;
-  lng: number;
-  accuracy?: number;
-  timestamp?: number;
-}
 
 export const ProfileView: React.FC = () => {
   const { user, updateUser } = useAuth();
@@ -97,7 +90,6 @@ export const ProfileView: React.FC = () => {
     if (user) {
       console.log('Current user:', user);
       console.log('Edit data:', editData);
-      console.log('Emergency contacts:', emergencyContacts);
       
       const updatedFields = {
         username: editData.username,
@@ -106,7 +98,7 @@ export const ProfileView: React.FC = () => {
         bio: editData.bio,
         skills: editData.skills.split(',').map((s: string) => s.trim()).filter((s: string) => s),
         location: editData.location,
-        emergency_contacts: emergencyContacts || []
+        emergency_contacts: emergencyContacts
       };
       
       console.log('Updated fields to save:', updatedFields);
@@ -118,23 +110,11 @@ export const ProfileView: React.FC = () => {
         setEditing(false);
       } catch (error: any) {
         console.error('Failed to update profile:', error);
-        console.error('Error stack:', error.stack);
         alert(`Failed to update profile: ${error.message || 'Unknown error'}. Please try again.`);
       }
     } else {
       console.error('No user found when trying to save');
       alert('Error: No user session found. Please log in again.');
-    }
-  };
-
-  // Handler for Enter key press - save profile
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      // Allow Shift+Enter for textarea (bio), but Enter alone saves
-      if ((e.target as HTMLElement).tagName !== 'TEXTAREA') {
-        e.preventDefault();
-        handleSave();
-      }
     }
   };
 
@@ -144,43 +124,7 @@ export const ProfileView: React.FC = () => {
     setFetchingLocation(true);
     try {
       console.log('Requesting current location...');
-      
-      // Try to get location with a fallback mechanism
-      let loc;
-      try {
-        // First try with high accuracy
-        loc = await getCurrentLocation();
-      } catch (error: any) {
-        console.warn('High accuracy location failed, trying with lower accuracy...', error);
-        
-        // Fallback: try with lower accuracy and shorter timeout
-        loc = await new Promise<Location>((resolve, reject) => {
-          if (!navigator.geolocation) {
-            reject(new Error('Geolocation is not supported by this browser'));
-            return;
-          }
-
-          navigator.geolocation.getCurrentPosition(
-            (position) => {
-              resolve({
-                lat: position.coords.latitude,
-                lng: position.coords.longitude,
-                accuracy: position.coords.accuracy,
-                timestamp: position.timestamp
-              });
-            },
-            (error) => {
-              reject(new Error(error.message));
-            },
-            {
-              enableHighAccuracy: false, // Lower accuracy but faster
-              timeout: 15000, // 15 seconds
-              maximumAge: 60000 // Accept cached location up to 1 minute old
-            }
-          );
-        });
-      }
-      
+      const loc = await getCurrentLocation();
       console.log('Location received:', loc);
       
       if (loc) {
@@ -445,7 +389,6 @@ export const ProfileView: React.FC = () => {
                   type="text"
                   value={editData.username}
                   onChange={(e) => setEditData({ ...editData, username: e.target.value })}
-                  onKeyDown={handleKeyDown}
                   className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                 />
               ) : (
@@ -463,7 +406,6 @@ export const ProfileView: React.FC = () => {
                   type="email"
                   value={editData.email}
                   onChange={(e) => setEditData({ ...editData, email: e.target.value })}
-                  onKeyDown={handleKeyDown}
                   className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                 />
               ) : (
@@ -481,7 +423,6 @@ export const ProfileView: React.FC = () => {
                   type="tel"
                   value={editData.phone}
                   onChange={(e) => setEditData({ ...editData, phone: e.target.value })}
-                  onKeyDown={handleKeyDown}
                   className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                   placeholder="Enter phone number"
                 />
@@ -501,7 +442,6 @@ export const ProfileView: React.FC = () => {
                     type="text"
                     value={editData.location}
                     onChange={(e) => setEditData({ ...editData, location: e.target.value })}
-                    onKeyDown={handleKeyDown}
                     className="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                     placeholder="Enter your location"
                   />
@@ -560,7 +500,6 @@ export const ProfileView: React.FC = () => {
                   type="text"
                   value={editData.skills}
                   onChange={(e) => setEditData({ ...editData, skills: e.target.value })}
-                  onKeyDown={handleKeyDown}
                   className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                   placeholder="Enter skills separated by commas"
                 />
@@ -796,15 +735,15 @@ export const ProfileView: React.FC = () => {
         const currentExperience = user.experience_points || 0;
         const servicesCompleted = user.services_completed || 0;
         const currentLevel = user.level || 1;
-        const progress = getLevelProgress(currentExperience, servicesCompleted);
-        const levelInfo = getLevelInfo(currentLevel);
 
         return (
           <>
-            {/* Level Progress Card */}
-            <div>
-              {levelInfo && <LevelProgressCard progress={progress} currentLevelInfo={levelInfo} />}
-            </div>
+            {/* New Detailed Level Progress Component */}
+            <LevelProgressDetail
+              currentLevel={currentLevel}
+              currentExperience={currentExperience}
+              servicesCompleted={servicesCompleted}
+            />
 
             {/* All Unlocked Perks */}
             <div className="bg-gradient-to-br from-slate-900 via-indigo-900 to-purple-900 rounded-2xl shadow-lg p-6 border-2 border-cyan-500/30"
@@ -812,7 +751,10 @@ export const ProfileView: React.FC = () => {
                 boxShadow: '0 0 40px rgba(34, 211, 238, 0.2)'
               }}
             >
-              <LevelPerkList perks={progress.unlockedPerks} />
+              {(() => {
+                const progress = getLevelProgress(currentExperience, servicesCompleted);
+                return <LevelPerkList perks={progress.unlockedPerks} />;
+              })()}
             </div>
           </>
         );
