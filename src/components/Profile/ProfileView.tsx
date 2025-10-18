@@ -2,9 +2,9 @@
 import { useAuth } from '../../contexts/AuthContext';
 import { Camera, Edit, Save, X, User, Mail, Phone, MapPin, Award, Clock, Shield, Plus, Trash2, PhoneCall, Lock } from 'lucide-react';
 import { EmergencyContact } from '../../types';
-import { LevelProgressCard, LevelPerkList, LevelBadge } from '../Level/LevelProgress';
+import { LevelPerkList, LevelBadge } from '../Level/LevelProgress';
 import LevelProgressDetail from '../Level/LevelProgressDetail';
-import { getLevelProgress, getLevelInfo } from '../../services/levelService';
+import { getLevelProgress } from '../../services/levelService';
 import { useGeolocation } from '../../hooks/useGeolocation';
 
 export const ProfileView: React.FC = () => {

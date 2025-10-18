@@ -4,7 +4,7 @@ import { Calendar, Clock, User, CheckCircle, XCircle, AlertCircle, ThumbsUp, Thu
 import { Booking } from '../../types';
 import { dataService } from '../../services/dataService';
 import { ReviewModal } from './ReviewModal';
-import ServiceCompletionCelebration from './ServiceCompletionCelebration';
+import ServiceCompletionCelebration from '../Services/ServiceCompletionCelebration';
 import { useServiceCompletion } from '../../hooks/useServiceCompletion';
 
 export const BookingList: React.FC = () => {
@@ -49,7 +49,6 @@ export const BookingList: React.FC = () => {
       // Calculate rewards for completion
       const booking = bookings.find(b => b.id === bookingId);
       if (booking) {
-        const baseXP = 50; // SERVICE_COMPLETED reward
         const baseCredits = booking.duration_hours || 10;
         
         // Simulate reward calculation (in real app, this would come from backend)

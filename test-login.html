@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Firebase Login Diagnostic Test</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .test-section {
+      background: white;
+      padding: 20px;
+      margin: 20px 0;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .status {
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 4px;
+    }
+    .success { background: #d4edda; color: #155724; }
+    .error { background: #f8d7da; color: #721c24; }
+    .warning { background: #fff3cd; color: #856404; }
+    button {
+      background: #007bff;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin: 5px;
+    }
+    button:hover { background: #0056b3; }
+    button:disabled { background: #ccc; cursor: not-allowed; }
+    input {
+      padding: 8px;
+      margin: 5px 0;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      width: 100%;
+      max-width: 300px;
+    }
+    code {
+      background: #f4f4f4;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: monospace;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔧 Firebase Login Diagnostic</h1>
+  <p>This page will help diagnose why login isn't working.</p>
+
+  <!-- Environment Check -->
+  <div class="test-section">
+    <h2>1. Environment Variables Check</h2>
+    <div id="env-check"></div>
+  </div>
+
+  <!-- Firebase Init Check -->
+  <div class="test-section">
+    <h2>2. Firebase Initialization</h2>
+    <div id="firebase-check"></div>
+  </div>
+
+  <!-- Email Login Test -->
+  <div class="test-section">
+    <h2>3. Email Login Test</h2>
+    <input type="email" id="test-email" placeholder="Email" value="demo@timebank.com" />
+    <input type="password" id="test-password" placeholder="Password" value="demo123" />
+    <br/>
+    <button onclick="testEmailLogin()">Test Email Login</button>
+    <div id="email-result"></div>
+  </div>
+
+  <!-- Google Login Test -->
+  <div class="test-section">
+    <h2>4. Google Login Test</h2>
+    <button onclick="testGoogleLogin()">Test Google Login</button>
+    <div id="google-result"></div>
+  </div>
+
+  <!-- Console Output -->
+  <div class="test-section">
+    <h2>5. Console Output</h2>
+    <div id="console-output" style="background: #f4f4f4; padding: 10px; border-radius: 4px; max-height: 300px; overflow-y: auto; font-family: monospace; font-size: 12px;"></div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+    import { getAuth, signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+
+    // Capture console logs
+    const originalLog = console.log;
+    const originalError = console.error;
+    const originalWarn = console.warn;
+    
+    function logToPage(message, type = 'log') {
+      const output = document.getElementById('console-output');
+      const time = new Date().toLocaleTimeString();
+      const color = type === 'error' ? '#d32f2f' : type === 'warn' ? '#f57c00' : '#333';
+      output.innerHTML += `<div style="color: ${color}; margin: 2px 0;">[${time}] ${message}</div>`;
+      output.scrollTop = output.scrollHeight;
+    }
+
+    console.log = (...args) => {
+      originalLog(...args);
+      logToPage(args.join(' '), 'log');
+    };
+    console.error = (...args) => {
+      originalError(...args);
+      logToPage('ERROR: ' + args.join(' '), 'error');
+    };
+    console.warn = (...args) => {
+      originalWarn(...args);
+      logToPage('WARN: ' + args.join(' '), 'warn');
+    };
+
+    // Check environment variables
+    const envVars = {
+      'API_KEY': import.meta.env.VITE_FIREBASE_API_KEY,
+      'AUTH_DOMAIN': import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+      'PROJECT_ID': import.meta.env.VITE_FIREBASE_PROJECT_ID,
+      'STORAGE_BUCKET': import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+      'MESSAGING_SENDER_ID': import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+      'APP_ID': import.meta.env.VITE_FIREBASE_APP_ID,
+    };
+
+    let envHTML = '<table style="width: 100%; border-collapse: collapse;">';
+    let allPresent = true;
+    for (const [key, value] of Object.entries(envVars)) {
+      const present = !!value && value !== 'undefined';
+      allPresent = allPresent && present;
+      const status = present ? '✅' : '❌';
+      const display = present ? (value.substring(0, 20) + '...') : 'MISSING';
+      envHTML += `<tr><td style="padding: 5px;"><strong>${key}</strong></td><td>${status} ${display}</td></tr>`;
+    }
+    envHTML += '</table>';
+    
+    if (allPresent) {
+      envHTML = '<div class="status success">✅ All environment variables present</div>' + envHTML;
+    } else {
+      envHTML = '<div class="status error">❌ Some environment variables missing! Check .env.local file</div>' + envHTML;
+    }
+    document.getElementById('env-check').innerHTML = envHTML;
+
+    // Initialize Firebase
+    let app, auth;
+    try {
+      const firebaseConfig = {
+        apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+        authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+        projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+        storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+        messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+        appId: import.meta.env.VITE_FIREBASE_APP_ID,
+      };
+
+      app = initializeApp(firebaseConfig);
+      auth = getAuth(app);
+      
+      document.getElementById('firebase-check').innerHTML = `
+        <div class="status success">✅ Firebase initialized successfully</div>
+        <p><strong>Project ID:</strong> <code>${firebaseConfig.projectId}</code></p>
+        <p><strong>Auth Domain:</strong> <code>${firebaseConfig.authDomain}</code></p>
+      `;
+      console.log('Firebase initialized:', firebaseConfig.projectId);
+    } catch (error) {
+      document.getElementById('firebase-check').innerHTML = `
+        <div class="status error">❌ Firebase initialization failed</div>
+        <p><strong>Error:</strong> ${error.message}</p>
+      `;
+      console.error('Firebase init error:', error);
+    }
+
+    // Test email login
+    window.testEmailLogin = async () => {
+      const email = document.getElementById('test-email').value;
+      const password = document.getElementById('test-password').value;
+      const resultDiv = document.getElementById('email-result');
+      
+      resultDiv.innerHTML = '<div class="status warning">⏳ Testing email login...</div>';
+      console.log('Testing email login with:', email);
+      
+      try {
+        const userCredential = await signInWithEmailAndPassword(auth, email, password);
+        resultDiv.innerHTML = `
+          <div class="status success">✅ Email login successful!</div>
+          <p><strong>User ID:</strong> <code>${userCredential.user.uid}</code></p>
+          <p><strong>Email:</strong> <code>${userCredential.user.email}</code></p>
+        `;
+        console.log('Login successful:', userCredential.user.uid);
+      } catch (error) {
+        resultDiv.innerHTML = `
+          <div class="status error">❌ Email login failed</div>
+          <p><strong>Error Code:</strong> <code>${error.code}</code></p>
+          <p><strong>Error Message:</strong> ${error.message}</p>
+        `;
+        console.error('Login error:', error.code, error.message);
+      }
+    };
+
+    // Test Google login
+    window.testGoogleLogin = async () => {
+      const resultDiv = document.getElementById('google-result');
+      
+      resultDiv.innerHTML = '<div class="status warning">⏳ Testing Google login...</div>';
+      console.log('Testing Google login...');
+      
+      try {
+        const provider = new GoogleAuthProvider();
+        const result = await signInWithPopup(auth, provider);
+        resultDiv.innerHTML = `
+          <div class="status success">✅ Google login successful!</div>
+          <p><strong>User ID:</strong> <code>${result.user.uid}</code></p>
+          <p><strong>Email:</strong> <code>${result.user.email}</code></p>
+          <p><strong>Display Name:</strong> <code>${result.user.displayName}</code></p>
+        `;
+        console.log('Google login successful:', result.user.uid);
+      } catch (error) {
+        resultDiv.innerHTML = `
+          <div class="status error">❌ Google login failed</div>
+          <p><strong>Error Code:</strong> <code>${error.code}</code></p>
+          <p><strong>Error Message:</strong> ${error.message}</p>
+        `;
+        console.error('Google login error:', error.code, error.message);
+      }
+    };
+
+    console.log('Diagnostic page loaded. Ready to test!');
+  </script>
+</body>
+</html>
