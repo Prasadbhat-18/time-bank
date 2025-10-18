@@ -468,3 +468,63 @@ export function getUnlockedPerks(level: number): LevelPerk[] {
   }
   return perks;
 }
+
+/**
+ * Service Balance System: Users must maintain a 3:1 ratio
+ * They can request up to 3 services, but must provide 1 service
+ * Example: If they've completed 2 services, they can request up to 6
+ */
+export interface ServiceBalance {
+  servicesCompleted: number;
+  servicesRequested: number;
+  maxServicesAllowed: number;
+  canRequestMore: boolean;
+  servicesUntilRequired: number;
+  ratio: string;
+}
+
+/**
+ * Calculate service balance for a user
+ * Rule: servicesRequested <= (servicesCompleted * 3)
+ * Meaning: For every 1 service provided, user can request up to 3
+ */
+export function calculateServiceBalance(
+  servicesCompleted: number,
+  servicesRequested: number
+): ServiceBalance {
+  const maxServicesAllowed = servicesCompleted * 3;
+  const canRequestMore = servicesRequested < maxServicesAllowed;
+  const servicesUntilRequired = maxServicesAllowed - servicesRequested;
+
+  return {
+    servicesCompleted,
+    servicesRequested,
+    maxServicesAllowed,
+    canRequestMore,
+    servicesUntilRequired,
+    ratio: `${servicesRequested}/${maxServicesAllowed}`
+  };
+}
+
+/**
+ * Check if user can request a new service
+ */
+export function canRequestService(
+  servicesCompleted: number,
+  servicesRequested: number
+): boolean {
+  return servicesRequested < servicesCompleted * 3;
+}
+
+/**
+ * Get service balance message
+ */
+export function getServiceBalanceMessage(balance: ServiceBalance): string {
+  if (balance.canRequestMore) {
+    return `You can request ${balance.servicesUntilRequired} more service${balance.servicesUntilRequired !== 1 ? 's' : ''} before needing to provide one.`;
+  } else {
+    const servicesNeeded = Math.ceil((balance.servicesRequested - balance.maxServicesAllowed) / 3) + 1;
+    return `You need to provide ${servicesNeeded} service${servicesNeeded !== 1 ? 's' : ''} to request more. Current ratio: ${balance.servicesRequested} requested / ${balance.servicesCompleted} provided`;
+  }
+}
+

@@ -23,6 +23,7 @@ export interface User {
   level?: number;
   experience_points?: number;
   services_completed?: number;
+  services_requested?: number; // Track service requests for 3:1 balance
   custom_credits_enabled?: boolean; // Unlocked at level 5
 }
 

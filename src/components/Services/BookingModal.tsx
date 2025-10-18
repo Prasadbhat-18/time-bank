@@ -4,6 +4,8 @@ import { X, Calendar, Clock } from 'lucide-react';
 import { Service } from '../../types';
 import { dataService } from '../../services/dataService';
 import { ChatWindow } from '../Chat/ChatWindow';
+import ServiceBalanceModal from './ServiceBalanceModal';
+import { canRequestService } from '../../services/levelService';
 
 interface BookingModalProps {
   service: Service;
@@ -19,10 +21,23 @@ export const BookingModal: React.FC<BookingModalProps> = ({ service, onClose, on
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showChat, setShowChat] = useState(false);
+  const [showBalanceModal, setShowBalanceModal] = useState(false);
+
+  // Check service balance
+  const servicesCompleted = user?.services_completed || 0;
+  const servicesRequested = user?.services_requested || 0;
+  const canRequest = canRequestService(servicesCompleted, servicesRequested);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
+
+    // Check service balance
+    if (!canRequest) {
+      setError('You\'ve reached your service request limit. Please provide a service first.');
+      setShowBalanceModal(true);
+      return;
+    }
 
     setError('');
     setLoading(true);
@@ -62,6 +77,25 @@ export const BookingModal: React.FC<BookingModalProps> = ({ service, onClose, on
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          {!canRequest && (
+            <div className="p-4 bg-red-50 border-2 border-red-300 rounded-lg flex gap-3">
+              <div className="text-red-600 font-bold text-xl flex-shrink-0">⚠️</div>
+              <div>
+                <h4 className="font-bold text-red-800 mb-1">Service Request Limit Reached</h4>
+                <p className="text-sm text-red-700">
+                  You've reached your service request quota ({servicesRequested}/{servicesCompleted * 3}). 
+                  Please provide a service first to unlock more requests.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setShowBalanceModal(true)}
+                  className="mt-2 text-sm font-semibold text-red-700 hover:text-red-900 underline"
+                >
+                  View Details →
+                </button>
+              </div>
+            </div>
+          )}
           <div className="bg-gray-50 rounded-lg p-4">
             <h3 className="font-semibold text-gray-800 mb-1">{service.title}</h3>
             <p className="text-sm text-gray-600">{service.description}</p>
@@ -182,6 +216,15 @@ export const BookingModal: React.FC<BookingModalProps> = ({ service, onClose, on
           </div>
         </div>
       )}
+
+      {/* Service Balance Modal */}
+      <ServiceBalanceModal
+        isOpen={showBalanceModal}
+        onClose={() => setShowBalanceModal(false)}
+        servicesCompleted={servicesCompleted}
+        servicesRequested={servicesRequested}
+        canRequest={canRequest}
+      />
     </div>
   );
 };
