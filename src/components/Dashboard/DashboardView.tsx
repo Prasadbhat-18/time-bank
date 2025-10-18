@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { TimeCredit, Booking, Service, Review } from '../../types';
 import { dataService } from '../../services/dataService';
+import { ServiceMonitor } from '../Services/ServiceMonitor';
 
 export const DashboardView: React.FC = () => {
   const { user } = useAuth();
@@ -331,6 +332,9 @@ export const DashboardView: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Firebase Service Monitor */}
+      <ServiceMonitor />
     </div>
   );
 };

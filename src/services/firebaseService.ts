@@ -14,6 +14,15 @@ import {
   setDoc,
   updateDoc,
   serverTimestamp,
+  collection,
+  query,
+  where,
+  getDocs,
+  onSnapshot,
+  addDoc,
+  Unsubscribe,
+  orderBy,
+  limit,
 } from 'firebase/firestore';
 import { User } from '../types';
 import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
@@ -107,49 +116,29 @@ class FirebaseService {
   }
 
   async register(email: string, password: string, username: string): Promise<User> {
-    if (!auth) {
-      throw new Error('❌ Firebase is not configured. Please check your VITE_FIREBASE_* environment variables in .env file. See FIREBASE_AUTH_FIX.md for help.');
-    }
+    const cred = await createUserWithEmailAndPassword(auth, email, password);
+    const uid = cred.user.uid;
+    const userRef = doc(db, 'users', uid);
+    const data = {
+      email,
+      username,
+      bio: '',
+      reputation_score: 5.0,
+      total_reviews: 0,
+      created_at: new Date().toISOString(),
+      signup_bonus: 10,
+      // Level system fields
+      level: 1,
+      experience_points: 0,
+      services_completed: 0,
+      custom_credits_enabled: false,
+    };
     try {
-      const cred = await createUserWithEmailAndPassword(auth, email, password);
-      const uid = cred.user.uid;
-      const userRef = doc(db, 'users', uid);
-      const data = {
-        email,
-        username,
-        bio: '',
-        reputation_score: 5.0,
-        total_reviews: 0,
-        created_at: new Date().toISOString(),
-        signup_bonus: 10,
-        // Level system fields
-        level: 1,
-        experience_points: 0,
-        services_completed: 0,
-        custom_credits_enabled: false,
-      };
-      try {
-        await setDoc(userRef, data);
-        return mapFirebaseUserToUser(uid, data);
-      } catch (error: any) {
-        if (error.code === 'permission-denied' || /permission/i.test(error.message || '')) {
-          throw new Error('❌ Firestore permission error: Your Firestore rules may not allow writes. Check FIREBASE_AUTH_FIX.md for the correct rules to use.');
-        }
-        throw error;
-      }
+      await setDoc(userRef, data);
+      return mapFirebaseUserToUser(uid, data);
     } catch (error: any) {
-      const code = error.code || '';
-      if (code === 'auth/email-already-in-use') {
-        throw new Error('This email is already registered. Try logging in or use a different email.');
-      }
-      if (code === 'auth/weak-password') {
-        throw new Error('Password is too weak. Use at least 6 characters.');
-      }
-      if (code === 'auth/invalid-email') {
-        throw new Error('Email address is not valid.');
-      }
-      if (code === 'auth/operation-not-allowed') {
-        throw new Error('❌ Email/password sign-up is not enabled in Firebase Console. Enable it in Authentication → Sign-in method.');
+      if (error.code === 'permission-denied' || /permission/i.test(error.message || '')) {
+        throw new Error('Firestore permission error while creating user: check your Firestore rules (Missing or insufficient permissions)');
       }
       throw error;
     }
@@ -257,6 +246,122 @@ class FirebaseService {
     const cred = EmailAuthProvider.credential(auth.currentUser.email, currentPassword);
     await reauthenticateWithCredential(auth.currentUser, cred);
     await updatePassword(auth.currentUser, newPassword);
+  }
+
+  /**
+   * Save a service to Firestore
+   */
+  async saveService(service: any): Promise<string> {
+    try {
+      if (!db) throw new Error('Firebase not initialized');
+      
+      const servicesCollection = collection(db, 'services');
+      const docRef = await addDoc(servicesCollection, {
+        ...service,
+        created_at: serverTimestamp(),
+        updated_at: serverTimestamp(),
+      });
+      
+      console.log('✅ Service saved to Firestore:', docRef.id);
+      return docRef.id;
+    } catch (error: any) {
+      console.error('❌ Failed to save service to Firestore:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get all services from Firestore
+   */
+  async getServices(): Promise<any[]> {
+    try {
+      if (!db) throw new Error('Firebase not initialized');
+      
+      const servicesCollection = collection(db, 'services');
+      const q = query(servicesCollection, orderBy('created_at', 'desc'), limit(100));
+      const snapshot = await getDocs(q);
+      
+      const services = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+      
+      console.log('✅ Retrieved services from Firestore:', services.length);
+      return services;
+    } catch (error: any) {
+      console.error('❌ Failed to get services from Firestore:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Subscribe to real-time service updates
+   */
+  subscribeToServices(callback: (services: any[]) => void): Unsubscribe | null {
+    try {
+      if (!db) throw new Error('Firebase not initialized');
+      
+      const servicesCollection = collection(db, 'services');
+      const q = query(servicesCollection, orderBy('created_at', 'desc'), limit(100));
+      
+      const unsubscribe = onSnapshot(q, snapshot => {
+        const services = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+        callback(services);
+        console.log('🔄 Real-time services updated:', services.length);
+      });
+      
+      return unsubscribe;
+    } catch (error: any) {
+      console.error('❌ Failed to subscribe to services:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Get services by provider
+   */
+  async getProviderServices(providerId: string): Promise<any[]> {
+    try {
+      if (!db) throw new Error('Firebase not initialized');
+      
+      const servicesCollection = collection(db, 'services');
+      const q = query(servicesCollection, where('provider_id', '==', providerId));
+      const snapshot = await getDocs(q);
+      
+      const services = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+      
+      console.log(`✅ Retrieved ${services.length} services for provider ${providerId}`);
+      return services;
+    } catch (error: any) {
+      console.error('❌ Failed to get provider services:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Update a service in Firestore
+   */
+  async updateService(serviceId: string, updates: any): Promise<void> {
+    try {
+      if (!db) throw new Error('Firebase not initialized');
+      
+      const serviceRef = doc(db, 'services', serviceId);
+      await updateDoc(serviceRef, {
+        ...updates,
+        updated_at: serverTimestamp(),
+      });
+      
+      console.log('✅ Service updated in Firestore:', serviceId);
+    } catch (error: any) {
+      console.error('❌ Failed to update service:', error);
+      throw error;
+    }
   }
 }
 

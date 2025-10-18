@@ -67,95 +67,37 @@ const saveShared = <T>(key: string, data: T[]) => {
   } catch {}
 };
 
-// Firebase helper functions - ENHANCED for reliable persistence
-// Helper to check if we should use Firebase for this user
-const shouldUseFirebase = (): boolean => {
-  if (!useFirebase) return false;
-  
-  // Check if current user is a demo account
-  try {
-    const storedUser = localStorage.getItem('timebank_user');
-    if (storedUser) {
-      const user = JSON.parse(storedUser);
-      const demoIds = ['current-user', 'official-account', 'level5-demo', 'level7-demo'];
-      const demoEmails = ['demo@timebank.com', 'level5@timebank.com', 'level7@timebank.com'];
-      
-      if (demoIds.includes(user.id) || demoEmails.includes(user.email)) {
-        console.log('🔒 Demo account detected - using localStorage only');
-        return false;
-      }
-    }
-  } catch (e) {
-    // Ignore parsing errors
-  }
-  
-  return true;
-};
-
-const saveToFirestore = async <T>(collectionName: string, id: string, data: T): Promise<boolean> => {
-  if (!shouldUseFirebase()) {
-    console.log(`📦 Using localStorage only for ${collectionName}`);
-    return false;
-  }
+// Firebase helper functions
+const saveToFirestore = async <T>(collectionName: string, id: string, data: T) => {
+  if (!useFirebase) return;
   try {
     await setDoc(doc(db, collectionName, id), {
       ...data,
       updated_at: serverTimestamp()
     });
-    console.log(`✅ Saved to Firestore ${collectionName}/${id}`);
-    return true;
   } catch (error) {
-    console.error(`❌ Error saving to Firestore ${collectionName}/${id}:`, error);
-    return false;
+    console.error(`Error saving to Firestore ${collectionName}:`, error);
   }
 };
 
 const loadFromFirestore = async <T>(collectionName: string): Promise<T[]> => {
-  if (!shouldUseFirebase()) {
-    console.log(`📦 Using localStorage only for ${collectionName}`);
-    return [];
-  }
+  if (!useFirebase) return [];
   try {
-    console.log(`📥 Loading ${collectionName} from Firestore...`);
     const querySnapshot = await getDocs(collection(db, collectionName));
-    const data = querySnapshot.docs.map(doc => ({
+    return querySnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
       created_at: doc.data().created_at?.toDate?.()?.toISOString() || doc.data().created_at,
       updated_at: doc.data().updated_at?.toDate?.()?.toISOString() || doc.data().updated_at
     })) as T[];
-    console.log(`✅ Loaded ${data.length} items from Firestore ${collectionName}`);
-    return data;
   } catch (error) {
-    console.error(`❌ Error loading from Firestore ${collectionName}:`, error);
+    console.error(`Error loading from Firestore ${collectionName}:`, error);
     return [];
   }
 };
 
-// Sync helper: Save entire collection to Firestore
-const syncCollectionToFirestore = async <T extends { id: string }>(collectionName: string, items: T[]) => {
-  if (!shouldUseFirebase()) {
-    console.log(`📦 Skipping Firebase sync for ${collectionName} (demo account)`);
-    return;
-  }
-  console.log(`🔄 Syncing ${items.length} items to Firestore ${collectionName}...`);
-  let successCount = 0;
-  for (const item of items) {
-    const success = await saveToFirestore(collectionName, item.id, item);
-    if (success) successCount++;
-  }
-  console.log(`✅ Synced ${successCount}/${items.length} items to Firestore ${collectionName}`);
-};
-
-// Initialize persistent arrays - Load from localStorage first (instant), then sync with Firebase
+// Initialize persistent arrays
 let mockUsers = loadFromStorage('users', initialMockUsers);
-let mockServices = loadFromStorage('services', initialMockServices);
-let mockBookings = loadFromStorage('bookings', initialMockBookings);
-let mockTransactions = loadFromStorage('transactions', initialMockTransactions);
-let mockReviews = loadFromStorage('reviews', initialMockReviews);
-let mockTimeCredits = loadFromStorage('time_credits', initialMockTimeCredits);
-let mockUserSkills = loadFromStorage('user_skills', initialMockUserSkills);
-
 // Ensure demo accounts always exist in mockUsers
 const ensureDemoAccounts = () => {
   const demoAccountIds = ['current-user', 'official-account', 'level5-demo', 'level7-demo'];
@@ -172,118 +114,12 @@ const ensureDemoAccounts = () => {
 };
 ensureDemoAccounts();
 
-// Firebase initialization - Load data from Firestore and sync to localStorage
-let firebaseInitialized = false;
-const initializeFromFirebase = async () => {
-  if (!shouldUseFirebase() || firebaseInitialized) {
-    if (!shouldUseFirebase()) {
-      console.log('📦 Demo account - skipping Firebase initialization');
-    }
-    return;
-  }
-  
-  console.log('🚀 Initializing data from Firebase...');
-  
-  try {
-    // Load all collections from Firestore
-    const [
-      fbUsers,
-      fbServices,
-      fbBookings,
-      fbTransactions,
-      fbReviews,
-      fbTimeCredits,
-      fbUserSkills
-    ] = await Promise.all([
-      loadFromFirestore<User>('users'),
-      loadFromFirestore<Service>('services'),
-      loadFromFirestore<Booking>('bookings'),
-      loadFromFirestore<Transaction>('transactions'),
-      loadFromFirestore<Review>('reviews'),
-      loadFromFirestore<TimeCredit>('timeCredits'),
-      loadFromFirestore<UserSkill>('userSkills')
-    ]);
-    
-    // Merge Firebase data with localStorage (Firebase takes priority for existing IDs)
-    if (fbUsers.length > 0) {
-      console.log(`📥 Merging ${fbUsers.length} users from Firebase`);
-      // Keep demo accounts from mockUsers, merge with Firebase users
-      const demoIds = ['current-user', 'official-account', 'level5-demo', 'level7-demo'];
-      const demoUsers = mockUsers.filter(u => demoIds.includes(u.id));
-      const nonDemoFbUsers = fbUsers.filter(u => !demoIds.includes(u.id));
-      mockUsers = [...demoUsers, ...nonDemoFbUsers];
-      saveToStorage('users', mockUsers);
-    }
-    
-    if (fbServices.length > 0) {
-      mockServices = fbServices;
-      saveToStorage('services', mockServices);
-    }
-    
-    if (fbBookings.length > 0) {
-      mockBookings = fbBookings;
-      saveToStorage('bookings', mockBookings);
-    }
-    
-    if (fbTransactions.length > 0) {
-      mockTransactions = fbTransactions;
-      saveToStorage('transactions', mockTransactions);
-    }
-    
-    if (fbReviews.length > 0) {
-      mockReviews = fbReviews;
-      saveToStorage('reviews', mockReviews);
-    }
-    
-    if (fbTimeCredits.length > 0) {
-      mockTimeCredits = fbTimeCredits;
-      saveToStorage('time_credits', mockTimeCredits);
-    }
-    
-    if (fbUserSkills.length > 0) {
-      mockUserSkills = fbUserSkills;
-      saveToStorage('user_skills', mockUserSkills);
-    }
-    
-    firebaseInitialized = true;
-    console.log('✅ Firebase initialization complete');
-    
-    // Sync any local-only data to Firebase
-    await syncLocalDataToFirebase();
-    
-  } catch (error) {
-    console.error('❌ Firebase initialization failed:', error);
-    console.log('📦 Continuing with localStorage data');
-  }
-};
-
-// Sync any data that exists in localStorage but not in Firebase
-const syncLocalDataToFirebase = async () => {
-  if (!shouldUseFirebase()) {
-    console.log('📦 Demo account - skipping Firebase sync');
-    return;
-  }
-  
-  console.log('🔄 Syncing localStorage data to Firebase...');
-  
-  // Only sync non-demo user data
-  await syncCollectionToFirestore('users', mockUsers);
-  await syncCollectionToFirestore('services', mockServices);
-  await syncCollectionToFirestore('bookings', mockBookings);
-  await syncCollectionToFirestore('transactions', mockTransactions);
-  await syncCollectionToFirestore('reviews', mockReviews);
-  await syncCollectionToFirestore('timeCredits', mockTimeCredits);
-  await syncCollectionToFirestore('userSkills', mockUserSkills);
-  
-  console.log('✅ Sync to Firebase complete');
-};
-
-// Initialize Firebase data (non-blocking - runs in background)
-if (useFirebase) {
-  initializeFromFirebase().catch(err => {
-    console.error('Firebase initialization error:', err);
-  });
-}
+let mockServices = loadFromStorage('services', initialMockServices);
+let mockBookings = loadFromStorage('bookings', initialMockBookings);
+let mockTransactions = loadFromStorage('transactions', initialMockTransactions);
+let mockReviews = loadFromStorage('reviews', initialMockReviews);
+let mockTimeCredits = loadFromStorage('time_credits', initialMockTimeCredits);
+let mockUserSkills = loadFromStorage('user_skills', initialMockUserSkills);
 
 // Helper function to add test services for cross-user booking
 const addTestServices = () => {
@@ -431,16 +267,6 @@ export const dataService = {
       };
       mockTimeCredits.push(tc);
       saveToStorage('time_credits', mockTimeCredits);
-      
-      // Save to Firebase
-      if (useFirebase) {
-        try {
-          await saveToFirestore('timeCredits', userId, tc);
-          console.log('✅ Initial credits saved to Firebase');
-        } catch (error) {
-          console.error('❌ Failed to save initial credits to Firebase:', error);
-        }
-      }
     }
     return tc;
   },
@@ -694,7 +520,8 @@ export const dataService = {
     // Persist to Firestore when available
     if (useFirebase) {
       try {
-        await saveToFirestore('services', newService.id, newService);
+        await firebaseService.saveService(newService);
+        console.log('🎉 Service successfully saved to Firestore:', newService.id);
       } catch (error) {
         console.error('Failed to save service to Firestore, saving to shared fallback:', error);
         const sharedFs = loadShared<Service>('services', mockServices.filter(s => !s.id.startsWith('test-')));
@@ -718,7 +545,8 @@ export const dataService = {
     saveToStorage('services', mockServices);
     if (useFirebase) {
       try {
-        await saveToFirestore('services', serviceId, updated);
+        await firebaseService.updateService(serviceId, updated);
+        console.log('✅ Service updated in Firestore:', serviceId);
       } catch (error) {
         console.error('Failed to update service in Firestore:', error);
       }
@@ -836,11 +664,6 @@ export const dataService = {
     const originalBooking = mockBookings[idx];
     const updated = { ...originalBooking, ...updates } as Booking;
     
-    // Track what needs to be saved to Firebase
-    let updatedProvider: User | undefined;
-    let updatedProviderCredits: TimeCredit | undefined;
-    const newTransactions: Transaction[] = [];
-    
     // If booking is being marked as completed, award credits to provider
     if (updates.status === 'completed' && originalBooking.status !== 'completed') {
       const providerCredits = mockTimeCredits.find(tc => tc.user_id === updated.provider_id);
@@ -857,7 +680,6 @@ export const dataService = {
         providerCredits.balance += earnedCredits;
         providerCredits.total_earned += earnedCredits;
         providerCredits.updated_at = new Date().toISOString();
-        updatedProviderCredits = providerCredits;
         
         // Update provider's level system
         const currentExperience = provider.experience_points || 0;
@@ -872,7 +694,6 @@ export const dataService = {
         provider.experience_points = currentExperience + experienceGained;
         provider.services_completed = currentServicesCompleted + 1;
         provider.level = calculateLevel(provider.experience_points);
-        updatedProvider = provider;
         
         // Check if level 5 reached for custom pricing
         if (provider.level >= 5 && !provider.custom_credits_enabled) {
@@ -891,7 +712,6 @@ export const dataService = {
           created_at: new Date().toISOString(),
         };
         mockTransactions.push(transaction);
-        newTransactions.push(transaction);
         
         // Create level-up notification transaction if level increased
         if (provider.level > previousLevel) {
@@ -904,7 +724,6 @@ export const dataService = {
             created_at: new Date().toISOString(),
           };
           mockTransactions.push(levelUpTransaction);
-          newTransactions.push(levelUpTransaction);
         }
         
         saveToStorage('users', mockUsers);
@@ -915,30 +734,6 @@ export const dataService = {
     saveToStorage('bookings', mockBookings);
     saveToStorage('time_credits', mockTimeCredits);
     saveToStorage('transactions', mockTransactions);
-    
-    // Save everything to Firebase
-    if (useFirebase) {
-      try {
-        await saveToFirestore('bookings', bookingId, updated);
-        
-        if (updatedProviderCredits) {
-          await saveToFirestore('timeCredits', updated.provider_id, updatedProviderCredits);
-        }
-        
-        if (updatedProvider) {
-          await saveToFirestore('users', updatedProvider.id, updatedProvider);
-        }
-        
-        for (const tx of newTransactions) {
-          await saveToFirestore('transactions', tx.id, tx);
-        }
-        
-        console.log('✅ Booking, credits, transactions, and user saved to Firebase');
-      } catch (error) {
-        console.error('❌ Failed to save booking updates to Firebase:', error);
-      }
-    }
-    
     return {
       ...updated,
       provider: mockUsers.find(u => u.id === updated.provider_id),
@@ -1031,17 +826,6 @@ export const dataService = {
     };
     mockReviews.push(newReview);
     saveToStorage('reviews', mockReviews);
-    
-    // Save to Firebase
-    if (useFirebase) {
-      try {
-        await saveToFirestore('reviews', newReview.id, newReview);
-        console.log('✅ Review saved to Firebase');
-      } catch (error) {
-        console.error('❌ Failed to save review to Firebase:', error);
-      }
-    }
-    
     return {
       ...newReview,
       reviewer: mockUsers.find(u => u.id === newReview.reviewer_id),
@@ -1064,18 +848,17 @@ export const dataService = {
     
     console.log('User updated successfully:', updated);
     
-    // Save to localStorage (always works)
+    // Save to localStorage
     saveToStorage('users', mockUsers);
     console.log('Saved to localStorage');
     
-    // Also save to Firebase if available (but don't fail if it doesn't work)
+    // Also save to Firebase if available
     if (useFirebase) {
       try {
         await saveToFirestore('users', userId, updated);
         console.log('Saved to Firestore');
       } catch (error) {
-        console.warn('Failed to save user to Firebase (using localStorage only):', error);
-        // Don't throw - localStorage save is enough for demo mode
+        console.error('Failed to save user to Firebase:', error);
       }
     }
     
@@ -1140,33 +923,6 @@ export const dataService = {
     saveToStorage('bookings', mockBookings);
     saveToStorage('time_credits', mockTimeCredits);
 
-    // Save to Firebase
-    if (useFirebase) {
-      try {
-        await saveToFirestore('bookings', bookingId, updatedBooking);
-        
-        const providerCredits = mockTimeCredits.find(tc => tc.user_id === booking.provider_id);
-        if (providerCredits) {
-          await saveToFirestore('timeCredits', booking.provider_id, providerCredits);
-        }
-        
-        const requesterCredits = mockTimeCredits.find(tc => tc.user_id === booking.requester_id);
-        if (requesterCredits) {
-          await saveToFirestore('timeCredits', booking.requester_id, requesterCredits);
-        }
-        
-        // Save transaction if created
-        const latestTx = mockTransactions[mockTransactions.length - 1];
-        if (latestTx && latestTx.booking_id === bookingId) {
-          await saveToFirestore('transactions', latestTx.id, latestTx);
-        }
-        
-        console.log('✅ Booking confirmation saved to Firebase');
-      } catch (error) {
-        console.error('❌ Failed to save booking confirmation to Firebase:', error);
-      }
-    }
-
     return {
       ...updatedBooking,
       provider: mockUsers.find(u => u.id === updatedBooking.provider_id),
@@ -1209,22 +965,6 @@ export const dataService = {
     mockBookings[idx] = updatedBooking;
     saveToStorage('bookings', mockBookings);
     saveToStorage('time_credits', mockTimeCredits);
-
-    // Save to Firebase
-    if (useFirebase) {
-      try {
-        await saveToFirestore('bookings', bookingId, updatedBooking);
-        
-        const requesterCredits = mockTimeCredits.find(tc => tc.user_id === booking.requester_id);
-        if (requesterCredits) {
-          await saveToFirestore('timeCredits', booking.requester_id, requesterCredits);
-        }
-        
-        console.log('✅ Booking decline saved to Firebase');
-      } catch (error) {
-        console.error('❌ Failed to save booking decline to Firebase:', error);
-      }
-    }
 
     return {
       ...updatedBooking,
