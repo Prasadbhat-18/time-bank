@@ -4,6 +4,8 @@ import { Calendar, Clock, User, CheckCircle, XCircle, AlertCircle, ThumbsUp, Thu
 import { Booking } from '../../types';
 import { dataService } from '../../services/dataService';
 import { ReviewModal } from './ReviewModal';
+import ServiceCompletionCelebration from './ServiceCompletionCelebration';
+import { useServiceCompletion } from '../../hooks/useServiceCompletion';
 
 export const BookingList: React.FC = () => {
   const { user } = useAuth();
@@ -15,6 +17,18 @@ export const BookingList: React.FC = () => {
   const [confirmingBooking, setConfirmingBooking] = useState<string | null>(null);
   const [decliningBooking, setDecliningBooking] = useState<string | null>(null);
   const [providerNotes, setProviderNotes] = useState('');
+  
+  // Celebration modal state
+  const [showCelebration, setShowCelebration] = useState(false);
+  const [completionData, setCompletionData] = useState({
+    xpEarned: 0,
+    creditsEarned: 0,
+    newLevel: 0,
+    previousLevel: 0,
+    totalServicesCompleted: 0,
+    rating: 5,
+    bonusInfo: { highRatingBonus: 0, consecutiveBonus: 0, perfectWeekBonus: 0 }
+  });
 
   useEffect(() => {
     if (user) {
@@ -31,6 +45,39 @@ export const BookingList: React.FC = () => {
   };
 
   const handleUpdateStatus = async (bookingId: string, status: 'confirmed' | 'completed' | 'cancelled') => {
+    if (status === 'completed' && user) {
+      // Calculate rewards for completion
+      const booking = bookings.find(b => b.id === bookingId);
+      if (booking) {
+        const baseXP = 50; // SERVICE_COMPLETED reward
+        const baseCredits = booking.duration_hours || 10;
+        
+        // Simulate reward calculation (in real app, this would come from backend)
+        const previousLevel = user.level || 1;
+        const rewards = useServiceCompletion(
+          5, // rating
+          baseCredits,
+          false, // isFirstService
+          1, // consecutiveDays
+          previousLevel,
+          (user.services_completed || 0) + 1,
+          5
+        );
+        
+        // Show celebration
+        setCompletionData({
+          xpEarned: rewards.totalXP,
+          creditsEarned: rewards.totalCredits,
+          newLevel: previousLevel, // In real app, calculate from new XP
+          previousLevel,
+          totalServicesCompleted: (user.services_completed || 0) + 1,
+          rating: 5,
+          bonusInfo: rewards.bonuses
+        });
+        setShowCelebration(true);
+      }
+    }
+    
     await dataService.updateBooking(bookingId, { status });
     await loadBookings();
   };
@@ -392,6 +439,19 @@ export const BookingList: React.FC = () => {
           }}
         />
       )}
+
+      {/* Service Completion Celebration Modal */}
+      <ServiceCompletionCelebration
+        isOpen={showCelebration}
+        onClose={() => setShowCelebration(false)}
+        xpEarned={completionData.xpEarned}
+        creditsEarned={completionData.creditsEarned}
+        newLevel={completionData.newLevel}
+        previousLevel={completionData.previousLevel}
+        totalServicesCompleted={completionData.totalServicesCompleted}
+        rating={completionData.rating}
+        bonusInfo={completionData.bonusInfo}
+      />
     </div>
   );
 };
