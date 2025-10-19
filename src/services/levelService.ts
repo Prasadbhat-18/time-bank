@@ -470,6 +470,22 @@ export function getUnlockedPerks(level: number): LevelPerk[] {
 }
 
 /**
+ * Get bonus credits awarded when leveling up
+ */
+export function getLevelUpBonusCredits(level: number): number {
+  const bonusCredits = {
+    2: 5,   // Level 2: 5 bonus credits
+    3: 10,  // Level 3: 10 bonus credits
+    4: 15,  // Level 4: 15 bonus credits
+    5: 25,  // Level 5: 25 bonus credits (Custom pricing unlock)
+    6: 35,  // Level 6: 35 bonus credits
+    7: 50,  // Level 7: 50 bonus credits (Max level)
+  };
+  
+  return bonusCredits[level as keyof typeof bonusCredits] || 0;
+}
+
+/**
  * Service Balance System: Users must maintain a 3:1 ratio
  * They can request up to 3 services, but must provide 1 service
  * Example: If they've completed 2 services, they can request up to 6
