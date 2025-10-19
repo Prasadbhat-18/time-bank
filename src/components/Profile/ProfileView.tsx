@@ -1,11 +1,12 @@
 ﻿import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { Camera, Edit, Save, X, User, Mail, Phone, MapPin, Award, Clock, Shield, Plus, Trash2, PhoneCall, Lock } from 'lucide-react';
-import { EmergencyContact } from '../../types';
+import { Camera, Edit, Save, X, User, Mail, Phone, MapPin, Award, Clock, Shield, Plus, Trash2, PhoneCall, Lock, Star } from 'lucide-react';
+import { EmergencyContact, Review } from '../../types';
 import { LevelPerkList, LevelBadge } from '../Level/LevelProgress';
 import LevelProgressDetail from '../Level/LevelProgressDetail';
 import { getLevelProgress } from '../../services/levelService';
 import { useGeolocation } from '../../hooks/useGeolocation';
+import { dataService } from '../../services/dataService';
 
 export const ProfileView: React.FC = () => {
   const { user, updateUser } = useAuth();
@@ -40,6 +41,10 @@ export const ProfileView: React.FC = () => {
   const [pwLoading, setPwLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
+  // Reviews state
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [reviewsLoading, setReviewsLoading] = useState(false);
+  
   // Geolocation hook
   const { getCurrentLocation } = useGeolocation();
   const [fetchingLocation, setFetchingLocation] = useState(false);
@@ -66,8 +71,24 @@ export const ProfileView: React.FC = () => {
           location: user.location || ''
         });
         setEmergencyContacts(user.emergency_contacts || []);
+        loadReviews();
       }
     }, [user]);
+
+  // Load reviews for the current user
+  const loadReviews = async () => {
+    if (!user?.id) return;
+    
+    setReviewsLoading(true);
+    try {
+      const userReviews = await dataService.getReviews(user.id);
+      setReviews(userReviews);
+    } catch (error) {
+      console.error('Failed to load reviews:', error);
+    } finally {
+      setReviewsLoading(false);
+    }
+  };
 
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -759,6 +780,80 @@ export const ProfileView: React.FC = () => {
           </>
         );
       })()}
+
+      {/* Reviews Section */}
+      <div className="bg-white rounded-xl shadow-lg p-4 md:p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-semibold text-gray-800 flex items-center gap-2">
+            <Star className="w-5 h-5 text-amber-500" />
+            Reviews Received ({user?.total_reviews || 0})
+          </h2>
+          <div className="text-right">
+            <div className="text-sm text-gray-600">Average Rating</div>
+            <div className="flex items-center gap-1">
+              <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
+              <span className="font-semibold text-gray-800">
+                {user?.reputation_score?.toFixed(1) || '0.0'}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {reviewsLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-500"></div>
+          </div>
+        ) : reviews.length === 0 ? (
+          <div className="text-center py-8 text-gray-500">
+            <Star className="w-12 h-12 mx-auto text-gray-300 mb-3" />
+            <p>No reviews yet</p>
+            <p className="text-sm">Complete your first service to receive reviews</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {reviews.map((review) => (
+              <div key={review.id} className="bg-gray-50 rounded-lg p-4">
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden">
+                      {review.reviewer?.avatar_url ? (
+                        <img
+                          src={review.reviewer.avatar_url}
+                          alt={review.reviewer.username}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <User className="w-5 h-5 text-gray-400" />
+                      )}
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-gray-800">
+                        {review.reviewer?.username || 'Anonymous'}
+                      </h4>
+                      <p className="text-sm text-gray-500">
+                        {new Date(review.created_at).toLocaleDateString()}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {[...Array(5)].map((_, i) => (
+                      <Star
+                        key={i}
+                        className={`w-4 h-4 ${
+                          i < review.rating
+                            ? 'text-amber-500 fill-amber-500'
+                            : 'text-gray-300'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                </div>
+                <p className="text-gray-700 leading-relaxed">{review.comment}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Activity Stats */}
       <div className="bg-white rounded-xl shadow-lg p-4 md:p-6">
