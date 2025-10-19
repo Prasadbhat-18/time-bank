@@ -8,7 +8,8 @@ import {
   Clock,
   Users,
   ArrowRight,
-  HelpCircle,
+  MessageCircle,
+  Bot,
 } from 'lucide-react';
 import { TimeCredit, Booking, Service, Review } from '../../types';
 import { dataService } from '../../services/dataService';
@@ -21,7 +22,7 @@ export const DashboardView: React.FC = () => {
   const [recentServices, setRecentServices] = useState<Service[]>([]);
   const [recentReviews, setRecentReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showHowItWorks, setShowHowItWorks] = useState(false);
+  const [showChatbot, setShowChatbot] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -60,56 +61,85 @@ export const DashboardView: React.FC = () => {
 
   return (
     <div className="max-w-7xl mx-auto space-y-6 relative">
-      {/* Floating How it Works Button */}
+      {/* AI Chatbot Button */}
       <button
-        className="fixed bottom-20 md:bottom-8 left-4 md:left-8 z-50 bg-gradient-to-r from-emerald-500 to-cyan-500 text-white px-4 md:px-6 py-2 md:py-3 rounded-full shadow-lg flex items-center gap-2 hover:scale-105 hover:shadow-emerald-500/40 transition-all text-sm md:text-lg font-semibold"
-        onClick={() => setShowHowItWorks(true)}
+        className="fixed bottom-20 md:bottom-8 left-4 md:left-8 z-50 bg-gradient-to-r from-blue-500 to-purple-600 text-white px-4 md:px-6 py-2 md:py-3 rounded-full shadow-lg flex items-center gap-2 hover:scale-105 hover:shadow-blue-500/40 transition-all text-sm md:text-lg font-semibold"
+        onClick={() => setShowChatbot(true)}
       >
-        <HelpCircle className="w-5 h-5 md:w-6 md:h-6" />
-        How it works
+        <Bot className="w-5 h-5 md:w-6 md:h-6" />
+        AI Assistant
       </button>
 
-      {/* How it Works Modal */}
-      {showHowItWorks && (
+      {/* AI Chatbot Modal */}
+      {showChatbot && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full mx-4 p-6 md:p-8 relative animate-fade-in">
-            <button
-              className="absolute top-4 right-4 text-gray-400 hover:text-emerald-500 text-2xl"
-              onClick={() => setShowHowItWorks(false)}
-              aria-label="Close"
-            >
-              &times;
-            </button>
-            <h2 className="text-2xl font-bold text-emerald-700 mb-4 flex items-center gap-2">
-              <HelpCircle className="w-7 h-7" /> How TimeBank Works
-            </h2>
-            <ol className="space-y-4 text-gray-700 text-base">
-              <li>
-                <span className="font-semibold text-emerald-600">1. Register or Login:</span> Create your account or use a demo login to get started instantly.
-              </li>
-              <li>
-                <span className="font-semibold text-emerald-600">2. Set up your profile:</span> Add your skills, bio, and upload a profile picture so others can recognize you.
-              </li>
-              <li>
-                <span className="font-semibold text-emerald-600">3. Explore services:</span> Browse the marketplace to find skills you need or offer your own services to the community.
-              </li>
-              <li>
-                <span className="font-semibold text-emerald-600">4. Book or post:</span> Book a service from others or post your own. Use your time credits to exchange value.
-              </li>
-              <li>
-                <span className="font-semibold text-emerald-600">5. Earn & spend credits:</span> Earn credits by helping others, and spend them to get help in return. All activity is tracked in your wallet.
-              </li>
-              <li>
-                <span className="font-semibold text-emerald-600">6. Review & connect:</span> Leave reviews, build your reputation, and grow your network in the TimeBank community!
-              </li>
-            </ol>
-            <div className="mt-6 flex justify-center">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full mx-4 h-[600px] flex flex-col relative animate-fade-in">
+            <div className="flex items-center justify-between p-4 border-b border-gray-200">
+              <div className="flex items-center gap-2">
+                <Bot className="w-6 h-6 text-blue-600" />
+                <h2 className="text-xl font-bold text-gray-800">TimeBank AI Assistant</h2>
+              </div>
               <button
-                className="px-6 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg font-semibold shadow-md transition"
-                onClick={() => setShowHowItWorks(false)}
+                className="text-gray-400 hover:text-blue-600 text-2xl"
+                onClick={() => setShowChatbot(false)}
+                aria-label="Close"
               >
-                Got it!
+                &times;
               </button>
+            </div>
+            
+            <div className="flex-1 p-4 overflow-y-auto bg-gray-50">
+              <div className="space-y-4">
+                <div className="flex items-start gap-2">
+                  <Bot className="w-8 h-8 text-blue-600 mt-1 flex-shrink-0" />
+                  <div className="bg-white p-3 rounded-lg shadow-sm max-w-xs">
+                    <p className="text-gray-800">
+                      Hello! I'm your TimeBank AI assistant. I can help you with:
+                    </p>
+                    <ul className="mt-2 text-sm text-gray-600 space-y-1">
+                      <li>• Understanding how TimeBank works</li>
+                      <li>• Finding the right services</li>
+                      <li>• Managing your credits</li>
+                      <li>• Booking assistance</li>
+                      <li>• General questions</li>
+                    </ul>
+                  </div>
+                </div>
+                
+                <div className="flex justify-center">
+                  <div className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm">
+                    Ask me anything about TimeBank!
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div className="p-4 border-t border-gray-200">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Type your question here..."
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter') {
+                      // Handle sending message - this would integrate with the Noupe chatbot
+                      window.postMessage({ type: 'noupe:open' }, '*');
+                    }
+                  }}
+                />
+                <button
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  onClick={() => {
+                    // Trigger the external Noupe chatbot
+                    window.postMessage({ type: 'noupe:open' }, '*');
+                  }}
+                >
+                  <MessageCircle className="w-4 h-4" />
+                </button>
+              </div>
+              <p className="text-xs text-gray-500 mt-2 text-center">
+                Powered by AI • Connected to Noupe Assistant
+              </p>
             </div>
           </div>
         </div>
