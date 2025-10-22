@@ -470,7 +470,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setUser(user);
         saveUserToStorage(user);
       } else {
-        throw new Error('Failed to get user from Google login');
+        // If null, a redirect flow was likely initiated; no action needed here.
+        return;
       }
     } catch (error: any) {
       console.error('Google login error:', error);
@@ -538,15 +539,48 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const updateUser = async (updates: Partial<User>) => {
     if (user) {
+      console.log('🔄 AuthContext.updateUser called with:', updates);
+      console.log('📊 Current user state:', { 
+        level: user.level, 
+        xp: user.experience_points, 
+        services: user.services_completed 
+      });
+      
       if (isFirebaseConfigured() && auth) {
         const updatedUser = await firebaseService.updateProfile(user.id, updates);
+        console.log('✅ Updated user from Firebase:', {
+          level: updatedUser.level,
+          xp: updatedUser.experience_points,
+          services: updatedUser.services_completed
+        });
         setUser(updatedUser);
         saveUserToStorage(updatedUser);
+        
+        // Dispatch event AFTER state update
+        setTimeout(() => {
+          console.log('📡 Dispatching refresh event from AuthContext');
+          window.dispatchEvent(new CustomEvent('timebank:refreshProfileAndDashboard', {
+            detail: { user: updatedUser }
+          }));
+        }, 100);
       } else {
         // Mock update with persistence
         const updatedUser = await dataService.updateUser(user.id, updates);
+        console.log('✅ Updated user from dataService:', {
+          level: updatedUser.level,
+          xp: updatedUser.experience_points,
+          services: updatedUser.services_completed
+        });
         setUser(updatedUser);
         saveUserToStorage(updatedUser);
+        
+        // Dispatch event AFTER state update
+        setTimeout(() => {
+          console.log('📡 Dispatching refresh event from AuthContext');
+          window.dispatchEvent(new CustomEvent('timebank:refreshProfileAndDashboard', {
+            detail: { user: updatedUser }
+          }));
+        }, 100);
       }
     }
   };

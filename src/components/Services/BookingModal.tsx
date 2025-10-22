@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { X, Calendar, Clock } from 'lucide-react';
 import { Service } from '../../types';
@@ -50,8 +50,10 @@ export const BookingModal: React.FC<BookingModalProps> = ({ service, onClose, on
         confirmation_status: 'pending'
       });
 
-      // Show warning if user is approaching or has exceeded limit
-      if (!canRequest) {
+      // Only show the limit warning if this booking puts the user over the limit (i.e., after booking, canRequestService returns false)
+      const newServicesRequested = servicesRequested + 1;
+      const isBarred = !canRequestService(servicesCompleted, newServicesRequested);
+      if (isBarred) {
         setShowLimitWarning(true);
       } else {
         onBooked();
@@ -83,12 +85,15 @@ export const BookingModal: React.FC<BookingModalProps> = ({ service, onClose, on
               <p className="text-gray-600 mb-4">
                 You've successfully booked this service! However, you've reached your service request quota.
               </p>
+              <p className="text-gray-600 mb-4">
+                You've successfully booked this service! However, you've reached your service request quota.
+              </p>
               <div className="bg-amber-50 rounded-lg p-4 mb-6 text-left">
                 <p className="text-sm text-gray-700 mb-2">
-                  <span className="font-semibold">Current Ratio:</span> {servicesRequested}/{servicesCompleted * 3}
+                  <span className="font-semibold">Current Status:</span> {servicesRequested} requested, {servicesCompleted} completed
                 </p>
                 <p className="text-sm text-gray-700">
-                  <span className="font-semibold">To request more services:</span> Please provide a service first
+                  <span className="font-semibold">To request more services:</span> You can request up to {servicesCompleted === 0 ? '3 services before providing your first' : `${servicesCompleted + 3} total services (${servicesCompleted} completed + 3 more)`}
                 </p>
               </div>
               <button
@@ -234,14 +239,14 @@ export const BookingModal: React.FC<BookingModalProps> = ({ service, onClose, on
             {/* Right Column: Chat Panel */}
             {showChat && (
               <div className="hidden lg:flex flex-col border border-gray-200 rounded-lg overflow-hidden h-[600px]">
-                <ChatWindow peerId={service.provider_id} service={service} onClose={() => setShowChat(false)} />
+                <ChatWindow peerId={service.provider_id} service={service} embedded={true} />
               </div>
             )}
 
             {/* Mobile Chat: Full width below form */}
             {showChat && (
               <div className="lg:hidden col-span-1 border border-gray-200 rounded-lg overflow-hidden h-[400px]">
-                <ChatWindow peerId={service.provider_id} service={service} onClose={() => setShowChat(false)} />
+                <ChatWindow peerId={service.provider_id} service={service} embedded={true} />
               </div>
             )}
           </div>

@@ -20,5 +20,10 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": [
+    "src/components/Auth/LoginForm.backup.tsx",
+    "src/components/Auth/LoginForm.3d.tsx",
+    "src/services/testBookingInject.ts"
+  ]
 }

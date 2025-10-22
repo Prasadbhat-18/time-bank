@@ -15,33 +15,103 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({ booking, onClose, onRe
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
 
-  const isProvider = booking.provider_id === user?.id;
-  const reviewee = isProvider ? booking.requester : booking.provider;
+  // Only requesters can review providers
+  const isRequester = booking.requester_id === user?.id;
+  
+  // If current user is not the requester, they shouldn't be here
+  if (!isRequester) {
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-2xl p-8 text-center max-w-md">
+          <div className="text-4xl mb-4">⚠️</div>
+          <h3 className="text-xl font-bold text-gray-800 mb-2">Cannot Review</h3>
+          <p className="text-gray-600 mb-4">Only service requesters can leave reviews for service providers.</p>
+          <button
+            onClick={onClose}
+            className="px-6 py-2.5 bg-gray-500 hover:bg-gray-600 text-white rounded-lg transition"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    );
+  }
+  
+  const reviewee = booking.provider;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !reviewee) return;
+    
+    // Only requesters review providers
+    const revieweeId = booking.provider_id;
+    
+    if (!user || !revieweeId) {
+      console.error('Missing user or reviewee:', { 
+        user: user?.id, 
+        revieweeId, 
+        booking: booking.id,
+        isRequester 
+      });
+      alert('Error: Missing user information. Please try refreshing the page.');
+      return;
+    }
+
+    console.log('Submitting review:', {
+      booking_id: booking.id,
+      reviewer_id: user.id,
+      reviewee_id: revieweeId,
+      rating,
+      comment,
+    });
 
     setLoading(true);
     try {
-      await dataService.createReview({
+      const result = await dataService.createReview({
         booking_id: booking.id,
         reviewer_id: user.id,
-        reviewee_id: reviewee.id,
+        reviewee_id: revieweeId,
         rating,
         comment,
       });
-      onReviewed();
+      console.log('Review submitted successfully:', result);
+      
+      // Show success popup
+      setShowSuccess(true);
+      
+      // Trigger profile refresh for the reviewee
+      window.dispatchEvent(new CustomEvent('timebank:refreshProfileAndDashboard'));
+      
+      // Wait 1.5 seconds, then close and call callbacks
+      setTimeout(() => {
+        setShowSuccess(false);
+        onReviewed();
+        onClose();
+      }, 1500);
     } catch (error) {
       console.error('Failed to submit review:', error);
+      alert(`Failed to submit review: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <>
+      {/* Success Popup */}
+      {showSuccess && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-2xl p-8 text-center shadow-2xl">
+            <div className="text-6xl mb-4">✅</div>
+            <h3 className="text-2xl font-bold text-gray-800 mb-2">Review Submitted!</h3>
+            <p className="text-gray-600">Thank you for your feedback</p>
+          </div>
+        </div>
+      )}
+
+      {/* Main Review Modal */}
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl max-w-lg w-full">
         <div className="border-b border-gray-100 px-6 py-4 flex items-center justify-between">
           <h2 className="text-2xl font-bold text-gray-800">Leave a Review</h2>
@@ -54,7 +124,9 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({ booking, onClose, onRe
           <div className="bg-gray-50 rounded-lg p-4">
             <h3 className="font-semibold text-gray-800 mb-1">{booking.service?.title}</h3>
             <p className="text-sm text-gray-600">
-              Review for: <span className="font-medium">{reviewee?.username}</span>
+              Review for: <span className="font-medium">
+                {reviewee?.username || 'Service Provider'}
+              </span>
             </p>
           </div>
 
@@ -114,5 +186,6 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({ booking, onClose, onRe
         </form>
       </div>
     </div>
+    </>
   );
 };

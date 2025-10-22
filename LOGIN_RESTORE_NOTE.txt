@@ -1,0 +1,3 @@
+// Minimalist Login - Clean and working
+// This file contains the first 463 lines of LoginForm.tsx which is the complete minimalist login page
+// Use this to restore the file if needed

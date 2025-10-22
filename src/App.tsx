@@ -372,4 +372,7 @@ function App() {
   );
 }
 
-export default App;
+// At the end of LoginForm.tsx
+export const LoginForm = () => {
+  // ...your component code...
+};

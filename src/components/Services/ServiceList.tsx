@@ -21,6 +21,7 @@ export const ServiceList: React.FC = () => {
   const [hideMine, setHideMine] = useState<boolean>(false);
   const [minCredits, setMinCredits] = useState<string>('');
   const [maxCredits, setMaxCredits] = useState<string>('');
+  const [sortBy, setSortBy] = useState<'newest' | 'credits_high' | 'credits_low'>('newest');
   const [showServiceModal, setShowServiceModal] = useState(false);
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [selectedService, setSelectedService] = useState<Service | null>(null);
@@ -29,7 +30,11 @@ export const ServiceList: React.FC = () => {
 
   useEffect(() => {
     loadData();
-  }, [filterType, filterCategory, searchTerm, hideMine, minCredits, maxCredits, user?.id]);
+    // Also subscribe to global service refresh events
+    const refresh = () => loadData();
+    window.addEventListener('timebank:services:refresh', refresh);
+    return () => window.removeEventListener('timebank:services:refresh', refresh);
+  }, [filterType, filterCategory, searchTerm, hideMine, minCredits, maxCredits, sortBy, user?.id]);
 
   const loadData = async () => {
     setLoading(true);
@@ -73,12 +78,51 @@ export const ServiceList: React.FC = () => {
     if (!isNaN(min)) filtered = filtered.filter(s => (s.credits_per_hour ?? 0) >= min);
     if (!isNaN(max)) filtered = filtered.filter(s => (s.credits_per_hour ?? 0) <= max);
 
-    setServices(filtered);
+    // Apply client-side sorting
+    const sorted = [...filtered];
+    if (sortBy === 'newest') {
+      sorted.sort((a, b) => {
+        const ta = new Date(a.created_at || 0).getTime();
+        const tb = new Date(b.created_at || 0).getTime();
+        return tb - ta; // newest first
+      });
+    } else if (sortBy === 'credits_high') {
+      sorted.sort((a, b) => (b.credits_per_hour ?? 0) - (a.credits_per_hour ?? 0));
+    } else if (sortBy === 'credits_low') {
+      sorted.sort((a, b) => (a.credits_per_hour ?? 0) - (b.credits_per_hour ?? 0));
+    }
+
+    setServices(sorted);
     setSkills(skillsData);
     setLoading(false);
   };
 
   const categories = Array.from(new Set(skills.map((s) => s.category)));
+
+  const timeAgo = (iso?: string) => {
+    if (!iso) return '';
+    const d = new Date(iso).getTime();
+    const diff = Date.now() - d;
+    const sec = Math.floor(diff / 1000);
+    if (sec < 10) return 'just now';
+    if (sec < 60) return `${sec}s ago`;
+    const min = Math.floor(sec / 60);
+    if (min < 60) return `${min}m ago`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return `${hr}h ago`;
+    const day = Math.floor(hr / 24);
+    if (day === 1) return '1 day ago';
+    return `${day} days ago`;
+  };
+
+  const formatDateTime = (iso?: string) => {
+    if (!iso) return '';
+    try {
+      return new Date(iso).toLocaleString();
+    } catch {
+      return iso;
+    }
+  };
 
   const handleBookService = (service: Service) => {
     setSelectedService(service);
@@ -116,6 +160,15 @@ export const ServiceList: React.FC = () => {
           </div>
 
           <div className="flex gap-3 flex-wrap">
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as 'newest' | 'credits_high' | 'credits_low')}
+              className="px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+            >
+              <option value="newest">Sort: Newest first</option>
+              <option value="credits_high">Sort: Credits high → low</option>
+              <option value="credits_low">Sort: Credits low → high</option>
+            </select>
             <select
               value={filterType}
               onChange={(e) => setFilterType(e.target.value as 'all' | 'offer' | 'request')}
@@ -219,9 +272,17 @@ export const ServiceList: React.FC = () => {
                       >
                         {service.type === 'offer' ? 'Service Offered' : 'Service Needed'}
                       </span>
-                      <h3 className="text-lg font-semibold text-gray-800 mt-2 group-hover:text-emerald-600 transition">
-                        {service.title}
-                      </h3>
+                      <div className="flex items-center gap-2 mt-2">
+                        <h3 className="text-lg font-semibold text-gray-800 group-hover:text-emerald-600 transition">
+                          {service.title}
+                        </h3>
+                        <span
+                          className="text-xs text-gray-500"
+                          title={`Posted ${formatDateTime(service.created_at)}`}
+                        >
+                          • posted {timeAgo(service.created_at)}
+                        </span>
+                      </div>
                     </div>
                   </div>
 
@@ -287,11 +348,11 @@ export const ServiceList: React.FC = () => {
                           onClick={async () => {
                             try {
                               await dataService.deleteService(service.id);
-                              // refresh list
                               await loadData();
+                              try { window.dispatchEvent(new CustomEvent('timebank:services:refresh')); } catch {}
                             } catch (err) {
                               console.error('Failed to cancel service', err);
-                              // optionally show toast
+                              alert('Failed to cancel service. Please try again.');
                             }
                           }}
                           className="px-3 py-2 bg-red-100 text-red-600 text-sm rounded-lg border border-red-200"

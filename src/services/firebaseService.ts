@@ -36,7 +36,13 @@ function mapFirebaseUserToUser(uid: string, data: Record<string, unknown>): User
     reputation_score: (data.reputation_score as number) ?? 5.0,
     total_reviews: (data.total_reviews as number) ?? 0,
     created_at: (data.created_at as string) || new Date().toISOString(),
-  };
+    // Level system fields (optional in Firestore)
+    level: (data.level as number) ?? 1,
+    experience_points: (data.experience_points as number) ?? 0,
+    services_completed: (data.services_completed as number) ?? 0,
+    services_requested: (data.services_requested as number) ?? 0,
+    custom_credits_enabled: (data.custom_credits_enabled as boolean) ?? false,
+  } as User;
 }
 
 class FirebaseService {
@@ -266,6 +272,26 @@ class FirebaseService {
       return docRef.id;
     } catch (error: any) {
       console.error('❌ Failed to save service to Firestore:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Save a service to Firestore with a specific document ID (keeps IDs consistent across local and Firestore)
+   */
+  async saveServiceWithId(id: string, service: any): Promise<void> {
+    try {
+      if (!db) throw new Error('Firebase not initialized');
+
+      const serviceRef = doc(db, 'services', id);
+      await setDoc(serviceRef, {
+        ...service,
+        created_at: serverTimestamp(),
+        updated_at: serverTimestamp(),
+      });
+      console.log('✅ Service saved to Firestore with fixed ID:', id);
+    } catch (error: any) {
+      console.error('❌ Failed to save service with fixed ID to Firestore:', error);
       throw error;
     }
   }

@@ -529,7 +529,13 @@ export function canRequestService(
   servicesCompleted: number,
   servicesRequested: number
 ): boolean {
-  return servicesRequested < servicesCompleted * 3;
+  // If user has never completed a service, they can only request 3 services total
+  if (servicesCompleted === 0) {
+    return servicesRequested < 3;
+  }
+  
+  // If user has completed services, they can request up to 3 more than they've completed
+  return servicesRequested < servicesCompleted + 3;
 }
 
 /**

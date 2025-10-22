@@ -12,8 +12,7 @@ import {
 import {
   calculateLevel,
   calculateServiceExperience,
-  applyLevelBonus,
-  EXPERIENCE_REWARDS
+  getLevelUpBonusCredits
 } from './levelService';
 
 // Firebase imports
@@ -21,6 +20,7 @@ import { db, isFirebaseConfigured } from '../firebase';
 import { firebaseService } from './firebaseService';
 import {
   doc,
+  getDoc,
   setDoc,
   collection,
   getDocs,
@@ -517,22 +517,27 @@ export const dataService = {
     mockServices.push(newService);
     saveToStorage('services', mockServices);
 
-    // Persist to Firestore when available
+    // Persist to Firestore when available, and ALSO write to shared fallback for redundancy
     if (useFirebase) {
       try {
-        await firebaseService.saveService(newService);
-        console.log('🎉 Service successfully saved to Firestore:', newService.id);
+        // Save with fixed ID so Firestore and local storage stay in sync
+        await firebaseService.saveServiceWithId(newService.id, newService);
+        console.log('🎉 Service successfully saved to Firestore with fixed ID:', newService.id);
       } catch (error) {
-        console.error('Failed to save service to Firestore, saving to shared fallback:', error);
-        const sharedFs = loadShared<Service>('services', mockServices.filter(s => !s.id.startsWith('test-')));
-        sharedFs.push(newService);
-        saveShared('services', sharedFs);
+        console.error('Failed to save service to Firestore, will rely on shared fallback as well:', error);
       }
-    } else {
-      const shared = loadShared<Service>('services', mockServices.filter(s => !s.id.startsWith('test-')));
-      shared.push(newService);
-      saveShared('services', shared);
     }
+
+    // Always write-through to shared storage so services remain visible across accounts in the same browser
+    try {
+      const shared = loadShared<Service>('services', mockServices.filter(s => !s.id.startsWith('test-')));
+      // Deduplicate by id
+      const exists = shared.find(s => s.id === newService.id);
+      if (!exists) {
+        shared.push(newService);
+        saveShared('services', shared);
+      }
+    } catch {}
 
     return newService;
   },
@@ -551,6 +556,17 @@ export const dataService = {
         console.error('Failed to update service in Firestore:', error);
       }
     }
+    // Write-through to shared fallback so updates persist across sessions without Firebase
+    try {
+      const shared = loadShared<Service>('services', mockServices);
+      const i = shared.findIndex(s => s.id === serviceId);
+      if (i !== -1) {
+        shared[i] = { ...shared[i], ...updates } as Service;
+      } else {
+        shared.push(updated);
+      }
+      saveShared('services', shared);
+    } catch {}
     return {
       ...updated,
       provider: mockUsers.find(u => u.id === updated.provider_id),
@@ -571,25 +587,54 @@ export const dataService = {
         }
       }
     }
+    // Also remove from shared fallback so it doesn't reappear
+    try {
+      const shared = loadShared<Service>('services', []);
+      const filtered = shared.filter(s => s.id !== serviceId);
+      saveShared('services', filtered);
+    } catch {}
   },
 
   async getBookings(userId: string): Promise<Booking[]> {
-    // If Firebase available we would load shared bookings; otherwise, use shared localStorage fallback
-    if (!useFirebase) {
-      const sharedBookings = loadShared<Booking>('bookings', mockBookings);
-      const bookings = sharedBookings.filter(booking => booking.provider_id === userId || booking.requester_id === userId);
-      return bookings.map(b => ({
-        ...b,
-        provider: mockUsers.find(u => u.id === b.provider_id),
-        requester: mockUsers.find(u => u.id === b.requester_id),
-        service: mockServices.find(s => s.id === b.service_id),
-      })) as Booking[];
+    // Prefer Firestore when available so both participants see bookings across accounts
+    if (useFirebase) {
+      try {
+        const fromFs = await loadFromFirestore<Booking>('bookings');
+        const shared = loadShared<Booking>('bookings', []);
+        const allCandidates = [...fromFs, ...shared, ...mockBookings];
+        const byId = new Map<string, Booking>();
+        for (const b of allCandidates) {
+          if (!b || !b.id) continue;
+          if (!byId.has(b.id) || fromFs.find((fb: any) => fb.id === b.id)) {
+            byId.set(b.id, b);
+          }
+        }
+        const mine = Array.from(byId.values()).filter(b => b.provider_id === userId || b.requester_id === userId);
+
+        // Enrich with provider, requester and service
+        const userIds = Array.from(new Set(mine.flatMap(b => [b.provider_id, b.requester_id]).filter(Boolean)));
+        const userMap = new Map<string, any>();
+        await Promise.all(userIds.map(async (uid) => {
+          try {
+            const u = await firebaseService.getCurrentUser(uid);
+            if (u) userMap.set(uid, u);
+          } catch {}
+        }));
+
+        return mine.map(b => ({
+          ...b,
+          provider: b.provider || userMap.get(b.provider_id) || mockUsers.find(u => u.id === b.provider_id) || undefined,
+          requester: b.requester || userMap.get(b.requester_id) || mockUsers.find(u => u.id === b.requester_id) || undefined,
+          service: b.service || mockServices.find(s => s.id === b.service_id) || undefined,
+        })) as Booking[];
+      } catch (err) {
+        console.error('Failed to load bookings from Firestore, falling back to shared/local', err);
+      }
     }
 
-    const bookings = mockBookings.filter(booking => 
-      booking.provider_id === userId || booking.requester_id === userId
-    );
-    // Enrich bookings with related entities
+    // Fallback: use shared localStorage so cross-login in same browser works
+    const sharedBookings = loadShared<Booking>('bookings', mockBookings);
+    const bookings = sharedBookings.filter(booking => booking.provider_id === userId || booking.requester_id === userId);
     return bookings.map(b => ({
       ...b,
       provider: mockUsers.find(u => u.id === b.provider_id),
@@ -626,10 +671,18 @@ export const dataService = {
       // Note: credits_transferred remains false until provider confirms
     }
 
+    // Update services_requested count for the requester
+    const requesterUser = mockUsers.find(u => u.id === booking.requester_id);
+    if (requesterUser) {
+      requesterUser.services_requested = (requesterUser.services_requested || 0) + 1;
+    }
+
     // Persist in-memory and localStorage
     mockBookings.push(newBooking);
     saveToStorage('bookings', mockBookings);
     saveToStorage('time_credits', mockTimeCredits);
+    saveToStorage('users', mockUsers);
+    
     // Try to persist to Firestore when available; on failure, persist to shared fallback
     if (useFirebase) {
       try {
@@ -637,18 +690,23 @@ export const dataService = {
         if (requesterCredits) {
           await saveToFirestore('time_credits', booking.requester_id, requesterCredits);
         }
+        if (requesterUser) {
+          await saveToFirestore('users', booking.requester_id, requesterUser);
+        }
       } catch (error) {
         console.error('Failed to save booking to Firestore, falling back to shared storage:', error);
         const shared = loadShared<Booking>('bookings', mockBookings);
         shared.push(newBooking);
         saveShared('bookings', shared);
         saveShared('time_credits', mockTimeCredits);
+        saveShared('users', mockUsers);
       }
     } else {
       const shared = loadShared<Booking>('bookings', mockBookings);
       shared.push(newBooking);
       saveShared('bookings', shared);
       saveShared('time_credits', mockTimeCredits);
+      saveShared('users', mockUsers);
     }
     return {
       ...newBooking,
@@ -659,74 +717,141 @@ export const dataService = {
   },
 
   async updateBooking(bookingId: string, updates: Partial<Booking>): Promise<Booking> {
-    const idx = mockBookings.findIndex(b => b.id === bookingId);
-    if (idx === -1) throw new Error('Booking not found');
-    const originalBooking = mockBookings[idx];
+    let idx = mockBookings.findIndex(b => b.id === bookingId);
+    let originalBooking = mockBookings[idx];
+    // If not found locally, try shared storage or Firestore
+    if (!originalBooking) {
+      const shared = loadShared<Booking>('bookings', []);
+      const found = shared.find(b => b.id === bookingId);
+      if (found) originalBooking = found as Booking;
+    }
+    if (!originalBooking && useFirebase) {
+      try {
+        const snap = await getDoc(doc(db, 'bookings', bookingId));
+        if (snap.exists()) {
+          const data: any = snap.data();
+          originalBooking = {
+            id: bookingId,
+            ...data,
+            created_at: data.created_at?.toDate?.()?.toISOString?.() || data.created_at || new Date().toISOString(),
+          } as Booking;
+          mockBookings.push(originalBooking);
+          saveToStorage('bookings', mockBookings);
+          idx = mockBookings.findIndex(b => b.id === bookingId);
+        }
+      } catch (err) {
+        console.error('Failed to load booking from Firestore for update', err);
+      }
+    }
+    if (!originalBooking) throw new Error('Booking not found');
+    if (idx === -1) { mockBookings.push(originalBooking); idx = mockBookings.length - 1; }
     const updated = { ...originalBooking, ...updates } as Booking;
     
-    // If booking is being marked as completed, award credits to provider
+    // If booking is being marked as completed, award XP and (if not already done) credits to provider
     if (updates.status === 'completed' && originalBooking.status !== 'completed') {
       const providerCredits = mockTimeCredits.find(tc => tc.user_id === updated.provider_id);
-      const service = mockServices.find(s => s.id === updated.service_id);
+      const requesterCredits = mockTimeCredits.find(tc => tc.user_id === updated.requester_id);
+      let service = mockServices.find(s => s.id === updated.service_id);
+      if (!service && useFirebase && updated.service_id) {
+        try {
+          const sSnap = await getDoc(doc(db, 'services', updated.service_id));
+          if (sSnap.exists()) {
+            const sd: any = sSnap.data();
+            service = { id: updated.service_id, ...sd } as any;
+          }
+        } catch (err) {
+          console.warn('Could not fetch service from Firestore for booking completion', err);
+        }
+      }
       const provider = mockUsers.find(u => u.id === updated.provider_id);
-      
-      if (providerCredits && service && updated.duration_hours && provider) {
-        const baseCredits = updated.duration_hours * service.credits_per_hour;
-        
-        // Apply level bonus to earned credits
-        const currentLevel = provider.level || 1;
-        const earnedCredits = applyLevelBonus(baseCredits, currentLevel);
-        
-        providerCredits.balance += earnedCredits;
-        providerCredits.total_earned += earnedCredits;
-        providerCredits.updated_at = new Date().toISOString();
-        
-        // Update provider's level system
+
+      if (service && updated.duration_hours && provider) {
+        const baseCredits = updated.duration_hours * (service.credits_per_hour ?? 1);
+
+        if (providerCredits) {
+          // If base credits weren't transferred yet (no confirm), transfer base now
+          if (!updated.credits_transferred) {
+            providerCredits.balance += baseCredits;
+            providerCredits.total_earned += baseCredits;
+            providerCredits.updated_at = new Date().toISOString();
+            updated.credits_transferred = true;
+
+            // Burn base from requester as spent (it was already reserved at booking time)
+            if (requesterCredits) {
+              requesterCredits.total_spent = (requesterCredits.total_spent || 0) + baseCredits;
+              requesterCredits.updated_at = new Date().toISOString();
+            }
+
+            // Base payment transaction only
+            mockTransactions.push({
+              id: Date.now().toString(),
+              from_user_id: updated.requester_id,
+              to_user_id: updated.provider_id,
+              booking_id: bookingId,
+              amount: baseCredits,
+              transaction_type: 'service_completed' as const,
+              description: `Payment for: ${service.title}`,
+              created_at: new Date().toISOString(),
+            });
+          }
+        }
+
+        // Award XP and update provider level regardless of credit transfer state
         const currentExperience = provider.experience_points || 0;
         const currentServicesCompleted = provider.services_completed || 0;
         const previousLevel = provider.level || 1;
-        
-        // Calculate experience reward (assuming 5-star rating for now, can be updated with actual rating later)
         const isFirstService = currentServicesCompleted === 0;
-        const experienceGained = calculateServiceExperience(5, isFirstService, 1);
         
-        // Update provider stats
+        // Check if there's already a review for this booking to get actual rating
+        const existingReview = mockReviews.find(r => r.booking_id === bookingId);
+        const reviewRating = existingReview ? existingReview.rating : 0; // No bonus if no review yet
+        
+        const experienceGained = calculateServiceExperience(reviewRating, isFirstService, 1);
         provider.experience_points = currentExperience + experienceGained;
         provider.services_completed = currentServicesCompleted + 1;
         provider.level = calculateLevel(provider.experience_points);
-        
-        // Check if level 5 reached for custom pricing
         if (provider.level >= 5 && !provider.custom_credits_enabled) {
           provider.custom_credits_enabled = true;
         }
         
-        // Create transaction record with level bonus notation
-        const transaction = {
-          id: Date.now().toString(),
-          from_user_id: updated.requester_id,
-          to_user_id: updated.provider_id,
-          booking_id: bookingId,
-          amount: earnedCredits,
-          transaction_type: 'service_completed' as const,
-          description: `Payment for: ${service.title}${earnedCredits > baseCredits ? ` (Level ${currentLevel} Bonus: +${earnedCredits - baseCredits} credits)` : ''}`,
-          created_at: new Date().toISOString(),
-        };
-        mockTransactions.push(transaction);
+        console.log(`🎯 Service completed! Provider ${provider.username} gained ${experienceGained} XP (rating: ${reviewRating || 'none yet'}). Total XP: ${provider.experience_points}, Level: ${provider.level}`);
         
-        // Create level-up notification transaction if level increased
         if (provider.level > previousLevel) {
-          const levelUpTransaction = {
-            id: (Date.now() + 1).toString(),
-            to_user_id: updated.provider_id,
-            amount: 0,
-            transaction_type: 'adjustment' as const,
-            description: `🎉 Level Up! You reached Level ${provider.level}! ${EXPERIENCE_REWARDS.SERVICE_COMPLETED} XP earned.`,
-            created_at: new Date().toISOString(),
-          };
-          mockTransactions.push(levelUpTransaction);
+          // Mint a one-time level-up credit bonus
+          const levelBonus = getLevelUpBonusCredits(provider.level);
+          const providerTc = mockTimeCredits.find(tc => tc.user_id === updated.provider_id);
+          if (levelBonus > 0 && providerTc) {
+            providerTc.balance += levelBonus;
+            providerTc.total_earned += levelBonus;
+            providerTc.updated_at = new Date().toISOString();
+            mockTransactions.push({
+              id: (Date.now() + 2).toString(),
+              to_user_id: updated.provider_id,
+              amount: levelBonus,
+              transaction_type: 'adjustment' as const,
+              description: `🎉 Level Up Bonus! Reached Level ${provider.level}`,
+              created_at: new Date().toISOString(),
+            } as any);
+          } else {
+            // Still record a level-up note for history if no credits
+            mockTransactions.push({
+              id: (Date.now() + 2).toString(),
+              to_user_id: updated.provider_id,
+              amount: 0,
+              transaction_type: 'adjustment' as const,
+              description: `🎉 Level Up! You reached Level ${provider.level}!`,
+              created_at: new Date().toISOString(),
+            } as any);
+          }
         }
-        
         saveToStorage('users', mockUsers);
+        if (useFirebase) {
+          try {
+            await saveToFirestore('users', provider.id, provider as any);
+          } catch (e) {
+            console.warn('Failed to persist provider user update to Firestore', e);
+          }
+        }
       }
     }
     
@@ -734,6 +859,36 @@ export const dataService = {
     saveToStorage('bookings', mockBookings);
     saveToStorage('time_credits', mockTimeCredits);
     saveToStorage('transactions', mockTransactions);
+
+    // Write-through to Firestore and shared fallback so both users see updates
+    if (useFirebase) {
+      try {
+        await saveToFirestore('bookings', bookingId, updated);
+        // Persist credit and transactions if applicable
+        const providerTc = mockTimeCredits.find(tc => tc.user_id === updated.provider_id);
+        if (providerTc) await saveToFirestore('time_credits', providerTc.user_id, providerTc);
+        const requesterTc = mockTimeCredits.find(tc => tc.user_id === updated.requester_id);
+        if (requesterTc) await saveToFirestore('time_credits', requesterTc.user_id, requesterTc);
+        // Persist latest transaction record (id is timestamp-based; save all for simplicity)
+        const tx = mockTransactions[mockTransactions.length - 1];
+        if (tx) await saveToFirestore('transactions', tx.id, tx as any);
+      } catch (err) {
+        console.error('Failed to update booking in Firestore, falling back to shared', err);
+        const shared = loadShared<Booking>('bookings', mockBookings);
+        const i = shared.findIndex(b => b.id === bookingId);
+        if (i !== -1) {
+          shared[i] = updated;
+          saveShared('bookings', shared);
+        }
+      }
+    } else {
+      const shared = loadShared<Booking>('bookings', mockBookings);
+      const i = shared.findIndex(b => b.id === bookingId);
+      if (i !== -1) {
+        shared[i] = updated;
+        saveShared('bookings', shared);
+      }
+    }
     return {
       ...updated,
       provider: mockUsers.find(u => u.id === updated.provider_id),
@@ -818,14 +973,108 @@ export const dataService = {
     })) as Review[];
   },
 
+  async getReviewsByUser(userId: string): Promise<Review[]> {
+    const reviews = mockReviews.filter(review => review.reviewer_id === userId);
+    console.log(`Found ${reviews.length} reviews by user ${userId}:`, reviews.map(r => ({ id: r.id, booking_id: r.booking_id, rating: r.rating })));
+    return reviews.map(r => ({
+      ...r,
+      reviewer: mockUsers.find(u => u.id === r.reviewer_id),
+      reviewee: mockUsers.find(u => u.id === r.reviewee_id),
+    })) as Review[];
+  },
+
   async createReview(review: Omit<Review, 'id' | 'created_at'>): Promise<Review> {
+    console.log('Creating review:', review);
+    
     const newReview: Review = {
       ...review,
       id: Date.now().toString(),
       created_at: new Date().toISOString()
     };
+    
     mockReviews.push(newReview);
     saveToStorage('reviews', mockReviews);
+    
+    console.log('Review created and saved:', newReview);
+    console.log('Total reviews now:', mockReviews.length);
+
+    // Update reviewee's reputation score and total reviews count
+    const revieweeIdx = mockUsers.findIndex(u => u.id === review.reviewee_id);
+    if (revieweeIdx !== -1) {
+      const reviewee = mockUsers[revieweeIdx];
+      
+      // Get all reviews for this user to calculate new average
+      const userReviews = mockReviews.filter(r => r.reviewee_id === review.reviewee_id);
+      const totalRating = userReviews.reduce((sum, r) => sum + r.rating, 0);
+      const averageRating = totalRating / userReviews.length;
+      
+      // Update user's reputation and review count
+      reviewee.reputation_score = Number(averageRating.toFixed(1));
+      reviewee.total_reviews = userReviews.length;
+
+      // Award bonus XP for 5-star reviews
+      if (review.rating === 5) {
+        const currentExperience = reviewee.experience_points || 0;
+        const previousLevel = reviewee.level || 1;
+        
+        // Award high rating bonus XP
+        const bonusXP = 20; // EXPERIENCE_REWARDS.HIGH_RATING
+        reviewee.experience_points = currentExperience + bonusXP;
+        reviewee.level = calculateLevel(reviewee.experience_points);
+        
+        // Check for level up and award bonus credits
+        if (reviewee.level > previousLevel) {
+          reviewee.custom_credits_enabled = reviewee.level >= 5;
+          
+          // Award level-up bonus credits
+          const levelBonus = getLevelUpBonusCredits(reviewee.level);
+          if (levelBonus > 0) {
+            const revieweeTc = mockTimeCredits.find(tc => tc.user_id === reviewee.id);
+            if (revieweeTc) {
+              revieweeTc.balance += levelBonus;
+              revieweeTc.total_earned += levelBonus;
+              revieweeTc.updated_at = new Date().toISOString();
+              
+              mockTransactions.push({
+                id: (Date.now() + 1).toString(),
+                to_user_id: reviewee.id,
+                amount: levelBonus,
+                transaction_type: 'adjustment' as const,
+                description: `🎉 Level Up Bonus! Reached Level ${reviewee.level} (from 5-star review)`,
+                created_at: new Date().toISOString(),
+              } as any);
+              
+              saveToStorage('time_credits', mockTimeCredits);
+              saveToStorage('transactions', mockTransactions);
+            }
+          }
+        }
+        
+        console.log(`🌟 Awarded ${bonusXP} bonus XP to ${reviewee.username} for 5-star review! Total XP: ${reviewee.experience_points}, Level: ${reviewee.level}`);
+      }
+      
+      mockUsers[revieweeIdx] = reviewee;
+      saveToStorage('users', mockUsers);
+      
+      // Save to Firebase if available
+      if (useFirebase) {
+        try {
+          await saveToFirestore('users', reviewee.id, reviewee);
+        } catch (error) {
+          console.error('Failed to update user reputation in Firestore:', error);
+        }
+      }
+    }
+
+    // Save review to Firebase if available
+    if (useFirebase) {
+      try {
+        await saveToFirestore('reviews', newReview.id, newReview);
+      } catch (error) {
+        console.error('Failed to save review to Firestore:', error);
+      }
+    }
+
     return {
       ...newReview,
       reviewer: mockUsers.find(u => u.id === newReview.reviewer_id),
@@ -866,10 +1115,29 @@ export const dataService = {
   },
 
   async confirmBooking(bookingId: string, providerId: string, notes?: string): Promise<Booking> {
-    const idx = mockBookings.findIndex(b => b.id === bookingId);
-    if (idx === -1) throw new Error('Booking not found');
-    
-    const booking = mockBookings[idx];
+    let idx = mockBookings.findIndex(b => b.id === bookingId);
+    let booking = mockBookings[idx];
+    if (!booking) {
+      const shared = loadShared<Booking>('bookings', []);
+      const found = shared.find(b => b.id === bookingId);
+      if (found) booking = found as Booking;
+    }
+    if (!booking && useFirebase) {
+      try {
+        const snap = await getDoc(doc(db, 'bookings', bookingId));
+        if (snap.exists()) {
+          const data: any = snap.data();
+          booking = { id: bookingId, ...data, created_at: data.created_at?.toDate?.()?.toISOString?.() || data.created_at || new Date().toISOString() } as Booking;
+          mockBookings.push(booking);
+          saveToStorage('bookings', mockBookings);
+          idx = mockBookings.findIndex(b => b.id === bookingId);
+        }
+      } catch (err) {
+        console.error('Failed to fetch booking for confirm', err);
+      }
+    }
+    if (!booking) throw new Error('Booking not found');
+    if (idx === -1) { mockBookings.push(booking); idx = mockBookings.length - 1; }
     if (booking.provider_id !== providerId) {
       throw new Error('Only the service provider can confirm this booking');
     }
@@ -923,6 +1191,30 @@ export const dataService = {
     saveToStorage('bookings', mockBookings);
     saveToStorage('time_credits', mockTimeCredits);
 
+    // Persist to Firestore/shared for cross-user visibility
+    if (useFirebase) {
+      try {
+        await saveToFirestore('bookings', updatedBooking.id, updatedBooking);
+        const providerCredits = mockTimeCredits.find(tc => tc.user_id === updatedBooking.provider_id);
+        if (providerCredits) await saveToFirestore('time_credits', providerCredits.user_id, providerCredits);
+        const requesterCredits = mockTimeCredits.find(tc => tc.user_id === updatedBooking.requester_id);
+        if (requesterCredits) await saveToFirestore('time_credits', requesterCredits.user_id, requesterCredits);
+        const lastTx = mockTransactions[mockTransactions.length - 1];
+        if (lastTx) await saveToFirestore('transactions', lastTx.id, lastTx as any);
+      } catch (err) {
+        console.error('Failed to persist confirmed booking to Firestore, saving to shared fallback', err);
+        const shared = loadShared<Booking>('bookings', mockBookings);
+        const i = shared.findIndex(b => b.id === updatedBooking.id);
+        if (i === -1) shared.push(updatedBooking); else shared[i] = updatedBooking;
+        saveShared('bookings', shared);
+      }
+    } else {
+      const shared = loadShared<Booking>('bookings', mockBookings);
+      const i = shared.findIndex(b => b.id === updatedBooking.id);
+      if (i === -1) shared.push(updatedBooking); else shared[i] = updatedBooking;
+      saveShared('bookings', shared);
+    }
+
     return {
       ...updatedBooking,
       provider: mockUsers.find(u => u.id === updatedBooking.provider_id),
@@ -932,10 +1224,29 @@ export const dataService = {
   },
 
   async declineBooking(bookingId: string, providerId: string, reason?: string): Promise<Booking> {
-    const idx = mockBookings.findIndex(b => b.id === bookingId);
-    if (idx === -1) throw new Error('Booking not found');
-    
-    const booking = mockBookings[idx];
+    let idx = mockBookings.findIndex(b => b.id === bookingId);
+    let booking = mockBookings[idx];
+    if (!booking) {
+      const shared = loadShared<Booking>('bookings', []);
+      const found = shared.find(b => b.id === bookingId);
+      if (found) booking = found as Booking;
+    }
+    if (!booking && useFirebase) {
+      try {
+        const snap = await getDoc(doc(db, 'bookings', bookingId));
+        if (snap.exists()) {
+          const data: any = snap.data();
+          booking = { id: bookingId, ...data, created_at: data.created_at?.toDate?.()?.toISOString?.() || data.created_at || new Date().toISOString() } as Booking;
+          mockBookings.push(booking);
+          saveToStorage('bookings', mockBookings);
+          idx = mockBookings.findIndex(b => b.id === bookingId);
+        }
+      } catch (err) {
+        console.error('Failed to fetch booking for decline', err);
+      }
+    }
+    if (!booking) throw new Error('Booking not found');
+    if (idx === -1) { mockBookings.push(booking); idx = mockBookings.length - 1; }
     if (booking.provider_id !== providerId) {
       throw new Error('Only the service provider can decline this booking');
     }
@@ -965,6 +1276,26 @@ export const dataService = {
     mockBookings[idx] = updatedBooking;
     saveToStorage('bookings', mockBookings);
     saveToStorage('time_credits', mockTimeCredits);
+
+    // Persist to Firestore/shared for cross-user visibility
+    if (useFirebase) {
+      try {
+        await saveToFirestore('bookings', updatedBooking.id, updatedBooking);
+        const requesterCredits = mockTimeCredits.find(tc => tc.user_id === updatedBooking.requester_id);
+        if (requesterCredits) await saveToFirestore('time_credits', requesterCredits.user_id, requesterCredits);
+      } catch (err) {
+        console.error('Failed to persist declined booking to Firestore, saving to shared fallback', err);
+        const shared = loadShared<Booking>('bookings', mockBookings);
+        const i = shared.findIndex(b => b.id === updatedBooking.id);
+        if (i === -1) shared.push(updatedBooking); else shared[i] = updatedBooking;
+        saveShared('bookings', shared);
+      }
+    } else {
+      const shared = loadShared<Booking>('bookings', mockBookings);
+      const i = shared.findIndex(b => b.id === updatedBooking.id);
+      if (i === -1) shared.push(updatedBooking); else shared[i] = updatedBooking;
+      saveShared('bookings', shared);
+    }
 
     return {
       ...updatedBooking,

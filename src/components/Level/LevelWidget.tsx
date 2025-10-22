@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Trophy, Star, TrendingUp, Zap } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { getLevelProgress, getLevelInfo } from '../../services/levelService';
@@ -11,18 +11,65 @@ interface LevelWidgetProps {
 export const LevelWidget: React.FC<LevelWidgetProps> = ({ onViewProfile }) => {
   const { user } = useAuth();
   const [showModal, setShowModal] = useState(false);
+  const [forceRefresh, setForceRefresh] = useState(0);
+  const [localUser, setLocalUser] = useState(user);
 
-  if (!user) return null;
+  // Sync localUser with auth user
+  useEffect(() => {
+    setLocalUser(user);
+  }, [user]);
 
-  const currentExperience = user.experience_points || 0;
-  const servicesCompleted = user.services_completed || 0;
+  // Listen for XP refresh events and re-fetch from storage
+  useEffect(() => {
+    const handleRefresh = (event?: CustomEvent) => {
+      console.log('🎯 LevelWidget refreshing due to XP update');
+      console.log('📦 Event detail:', event?.detail);
+      
+      // Force immediate re-render with updated user data
+      if (event?.detail?.user) {
+        setLocalUser(event.detail.user);
+      }
+      
+      // Also try to fetch fresh data from localStorage
+      const storedUser = localStorage.getItem('timebank_user');
+      if (storedUser) {
+        try {
+          const parsed = JSON.parse(storedUser);
+          console.log('📂 Re-fetched user from localStorage:', {
+            level: parsed.level,
+            xp: parsed.experience_points,
+            services: parsed.services_completed
+          });
+          setLocalUser(parsed);
+        } catch (err) {
+          console.error('Failed to parse stored user:', err);
+        }
+      }
+      
+      setForceRefresh(prev => prev + 1);
+    };
+
+    window.addEventListener('timebank:refreshProfileAndDashboard', handleRefresh as EventListener);
+    return () => window.removeEventListener('timebank:refreshProfileAndDashboard', handleRefresh as EventListener);
+  }, []);
+
+  const displayUser = localUser || user;
+  
+  if (!displayUser) return null;
+
+  const currentExperience = displayUser.experience_points || 0;
+  const servicesCompleted = displayUser.services_completed || 0;
   const progress = getLevelProgress(currentExperience, servicesCompleted);
   const levelInfo = getLevelInfo(progress.currentLevel);
+
+  // Force refresh key to ensure re-render after XP updates
+  const refreshKey = `${currentExperience}-${servicesCompleted}-${forceRefresh}`;
 
   if (!levelInfo) return null;
 
   return (
     <div
+      key={refreshKey}
       onClick={onViewProfile}
       className="w-full bg-gradient-to-br from-slate-900 via-indigo-900 to-purple-900 rounded-xl p-4 border-2 transition-all hover:scale-[1.02] cursor-pointer group"
       style={{

@@ -26,6 +26,19 @@ export const DashboardView: React.FC = () => {
     }
   }, [user]);
 
+  // Listen for XP/profile refresh events
+  useEffect(() => {
+    const handleRefresh = () => {
+      console.log('🔄 Dashboard refreshing due to XP update');
+      if (user) {
+        loadDashboardData();
+      }
+    };
+
+    window.addEventListener('timebank:refreshProfileAndDashboard', handleRefresh);
+    return () => window.removeEventListener('timebank:refreshProfileAndDashboard', handleRefresh);
+  }, [user]);
+
   const loadDashboardData = async () => {
     if (!user) return;
 

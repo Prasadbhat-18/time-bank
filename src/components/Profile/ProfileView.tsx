@@ -5,25 +5,33 @@ import { EmergencyContact, Review } from '../../types';
 import { LevelPerkList, LevelBadge } from '../Level/LevelProgress';
 import LevelProgressDetail from '../Level/LevelProgressDetail';
 import { getLevelProgress } from '../../services/levelService';
-import { useGeolocation } from '../../hooks/useGeolocation';
+
 import { dataService } from '../../services/dataService';
 
 export const ProfileView: React.FC = () => {
   const { user, updateUser } = useAuth();
-  const [editing, setEditing] = useState(false);
-    const [profilePicture, setProfilePicture] = useState('');
+  
+  // Profile picture state
+  const [profilePicture, setProfilePicture] = useState('');
   const [uploading, setUploading] = useState(false);
-  const [editData, setEditData] = useState({
-    username: user?.username || '',
-    email: user?.email || '',
-    phone: user?.phone || '',
-    bio: user?.bio || '',
-    skills: user?.skills?.join(', ') || '',
-    location: user?.location || ''
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // NEW EDIT PROFILE STATE
+  const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState('');
+  const [saveError, setSaveError] = useState('');
+  const [formData, setFormData] = useState({
+    username: '',
+    email: '',
+    phone: '',
+    bio: '',
+    skills: '',
+    location: ''
   });
-  const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>(
-    user?.emergency_contacts || []
-  );
+  
+  // Emergency contacts state
+  const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>([]);
   const [showAddContact, setShowAddContact] = useState(false);
   const [newContact, setNewContact] = useState({
     name: '',
@@ -31,7 +39,8 @@ export const ProfileView: React.FC = () => {
     relationship: '',
     isPrimary: false
   });
-  // Change password UI state
+  
+  // Password change state
   const [showPasswordForm, setShowPasswordForm] = useState(false);
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -39,15 +48,25 @@ export const ProfileView: React.FC = () => {
   const [pwMessage, setPwMessage] = useState('');
   const [pwError, setPwError] = useState('');
   const [pwLoading, setPwLoading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Reviews state
   const [reviews, setReviews] = useState<Review[]>([]);
   const [reviewsLoading, setReviewsLoading] = useState(false);
-  
-  // Geolocation hook
-  const { getCurrentLocation } = useGeolocation();
-  const [fetchingLocation, setFetchingLocation] = useState(false);
+
+  // Initialize form data when user changes
+  useEffect(() => {
+    if (user) {
+      setFormData({
+        username: user.username || '',
+        email: user.email || '',
+        phone: user.phone || '',
+        bio: user.bio || '',
+        skills: user.skills?.join(', ') || '',
+        location: user.location || ''
+      });
+      setEmergencyContacts(user.emergency_contacts || []);
+    }
+  }, [user]);
 
     // Load profile picture when user changes
     useEffect(() => {
@@ -59,21 +78,24 @@ export const ProfileView: React.FC = () => {
       }
     }, [user?.id]);
 
-    // Update edit data when user changes
+    // Load reviews when user changes
     useEffect(() => {
       if (user) {
-        setEditData({
-          username: user.username || '',
-          email: user.email || '',
-          phone: user.phone || '',
-          bio: user.bio || '',
-          skills: user.skills?.join(', ') || '',
-          location: user.location || ''
-        });
-        setEmergencyContacts(user.emergency_contacts || []);
         loadReviews();
       }
     }, [user]);
+
+  // Listen for profile refresh events (when reviews are submitted)
+  useEffect(() => {
+    const handleRefresh = () => {
+      if (user?.id) {
+        loadReviews();
+      }
+    };
+
+    window.addEventListener('timebank:refreshProfileAndDashboard', handleRefresh);
+    return () => window.removeEventListener('timebank:refreshProfileAndDashboard', handleRefresh);
+  }, [user?.id]);
 
   // Load reviews for the current user
   const loadReviews = async () => {
@@ -106,112 +128,78 @@ export const ProfileView: React.FC = () => {
     }
   };
 
-  const handleSave = async () => {
-    console.log('handleSave called');
+  // NEW EDIT PROFILE FUNCTIONS
+  const startEditing = () => {
+    setIsEditing(true);
+    setSaveError('');
+    setSaveMessage('');
+  };
+
+  const cancelEditing = () => {
+    setIsEditing(false);
+    setSaveError('');
+    setSaveMessage('');
+    // Reset form data to user's current data
     if (user) {
-      console.log('Current user:', user);
-      console.log('Edit data:', editData);
-      
-      const updatedFields = {
-        username: editData.username,
-        email: editData.email,
-        phone: editData.phone,
-        bio: editData.bio,
-        skills: editData.skills.split(',').map((s: string) => s.trim()).filter((s: string) => s),
-        location: editData.location,
+      setFormData({
+        username: user.username || '',
+        email: user.email || '',
+        phone: user.phone || '',
+        bio: user.bio || '',
+        skills: user.skills?.join(', ') || '',
+        location: user.location || ''
+      });
+    }
+  };
+
+  const saveProfile = async () => {
+    if (!user) {
+      setSaveError('No user logged in');
+      return;
+    }
+
+    setIsSaving(true);
+    setSaveError('');
+    setSaveMessage('');
+
+    try {
+      const updates = {
+        username: formData.username.trim() || user.username,
+        email: formData.email.trim() || user.email,
+        phone: formData.phone.trim(),
+        bio: formData.bio.trim(),
+        skills: formData.skills 
+          ? formData.skills.split(',').map((skill: string) => skill.trim()).filter((skill: string) => skill.length > 0)
+          : [],
+        location: formData.location.trim(),
         emergency_contacts: emergencyContacts
       };
-      
-      console.log('Updated fields to save:', updatedFields);
-      
-      try {
-        await updateUser(updatedFields);
-        console.log('Profile updated successfully in AuthContext');
-        alert('Profile updated successfully!');
-        setEditing(false);
-      } catch (error: any) {
-        console.error('Failed to update profile:', error);
-        alert(`Failed to update profile: ${error.message || 'Unknown error'}. Please try again.`);
-      }
-    } else {
-      console.error('No user found when trying to save');
-      alert('Error: No user session found. Please log in again.');
-    }
-  };
 
-  // Handler to get current location
-  const handleGetLocation = async () => {
-    console.log('handleGetLocation called');
-    setFetchingLocation(true);
-    try {
-      console.log('Requesting current location...');
-      const loc = await getCurrentLocation();
-      console.log('Location received:', loc);
+      await updateUser(updates);
       
-      if (loc) {
-        console.log('Reverse geocoding coordinates:', loc.lat, loc.lng);
-        const address = await reverseGeocode(loc.lat, loc.lng);
-        console.log('Address resolved:', address);
-        setEditData({ ...editData, location: address });
-        alert(`Location detected: ${address}`);
-      } else {
-        console.warn('No location data received');
-        alert('No location data received. Please try again or enter manually.');
-      }
+      setSaveMessage('✅ Profile updated successfully!');
+      setIsEditing(false);
+      
+      // Clear success message after 3 seconds
+      setTimeout(() => setSaveMessage(''), 3000);
+
     } catch (error: any) {
-      console.error('Failed to get location:', error);
-      alert(`Failed to get your location: ${error.message || 'Unknown error'}. Please enter manually.`);
+      setSaveError('❌ Failed to save changes: ' + (error.message || 'Please try again'));
     } finally {
-      setFetchingLocation(false);
+      setIsSaving(false);
     }
   };
 
-  // Simple reverse geocoding using Nominatim (OpenStreetMap)
-  const reverseGeocode = async (lat: number, lng: number): Promise<string> => {
-    try {
-      console.log('Fetching address from Nominatim API...');
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1`,
-        {
-          headers: {
-            'User-Agent': 'TimeBank-App/1.0'
-          }
-        }
-      );
-      
-      if (!response.ok) {
-        console.error('Nominatim API error:', response.status, response.statusText);
-        return `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
-      }
-      
-      const data = await response.json();
-      console.log('Nominatim response:', data);
-      
-      // Create a more readable address
-      const address = data.address;
-      let formattedAddress = data.display_name;
-      
-      if (address) {
-        // Try to create a shorter, more user-friendly address
-        const parts = [];
-        if (address.road) parts.push(address.road);
-        if (address.city) parts.push(address.city);
-        else if (address.town) parts.push(address.town);
-        else if (address.village) parts.push(address.village);
-        if (address.state) parts.push(address.state);
-        if (address.country) parts.push(address.country);
-        
-        if (parts.length > 0) {
-          formattedAddress = parts.join(', ');
-        }
-      }
-      
-      return formattedAddress || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
-    } catch (error) {
-      console.error('Reverse geocoding failed:', error);
-      return `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
-    }
+  const updateFormField = (field: string, value: string) => {
+    setFormData(prev => ({
+      ...prev,
+      [field]: value
+    }));
   };
+
+
+
+
 
   const handleAddEmergencyContact = () => {
     if (newContact.name && newContact.phone) {
@@ -245,17 +233,7 @@ export const ProfileView: React.FC = () => {
     return phoneRegex.test(phone.replace(/[\s\-\(\)]/g, ''));
   };
 
-  const handleCancel = () => {
-    setEditData({
-      username: user?.username || '',
-      email: user?.email || '',
-      phone: user?.phone || '',
-      bio: user?.bio || '',
-      skills: user?.skills?.join(', ') || '',
-      location: user?.location || ''
-    });
-    setEditing(false);
-  };
+
 
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -360,12 +338,12 @@ export const ProfileView: React.FC = () => {
               </div>
             </div>
 
-            {/* Edit Button */}
+            {/* NEW EDIT/SAVE BUTTONS */}
             <div className="sm:self-center">
-              {!editing ? (
+              {!isEditing ? (
                 <button
-                  onClick={() => setEditing(true)}
-                  className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 md:px-6 py-2 rounded-lg flex items-center gap-2 transition-colors text-sm md:text-base tap-target"
+                  onClick={startEditing}
+                  className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 md:px-6 py-2 rounded-lg flex items-center gap-2 transition-colors text-sm md:text-base"
                 >
                   <Edit className="w-4 h-4" />
                   <span className="hidden sm:inline">Edit Profile</span>
@@ -374,15 +352,26 @@ export const ProfileView: React.FC = () => {
               ) : (
                 <div className="flex gap-2">
                   <button
-                    onClick={handleSave}
-                    className="bg-emerald-500 hover:bg-emerald-600 text-white px-3 md:px-4 py-2 rounded-lg flex items-center gap-2 transition-colors text-sm md:text-base tap-target"
+                    onClick={saveProfile}
+                    disabled={isSaving}
+                    className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white px-3 md:px-4 py-2 rounded-lg flex items-center gap-2 transition-colors text-sm md:text-base font-medium"
                   >
-                    <Save className="w-4 h-4" />
-                    <span className="hidden sm:inline">Save</span>
+                    {isSaving ? (
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      <Save className="w-4 h-4" />
+                    )}
+                    <span className="hidden sm:inline">
+                      {isSaving ? 'Saving...' : 'Save Changes'}
+                    </span>
+                    <span className="sm:hidden">
+                      {isSaving ? '...' : 'Save'}
+                    </span>
                   </button>
                   <button
-                    onClick={handleCancel}
-                    className="bg-gray-500 hover:bg-gray-600 text-white px-3 md:px-4 py-2 rounded-lg flex items-center gap-2 transition-colors text-sm md:text-base tap-target"
+                    onClick={cancelEditing}
+                    disabled={isSaving}
+                    className="bg-gray-500 hover:bg-gray-600 disabled:bg-gray-400 text-white px-3 md:px-4 py-2 rounded-lg flex items-center gap-2 transition-colors text-sm md:text-base"
                   >
                     <X className="w-4 h-4" />
                     <span className="hidden sm:inline">Cancel</span>
@@ -402,14 +391,19 @@ export const ProfileView: React.FC = () => {
             <User className="w-5 h-5 text-emerald-500" />
             Personal Information
           </h2>
+          
+          {/* NEW Success/Error Messages */}
+          {saveMessage && <div className="p-3 text-sm bg-green-50 border border-green-200 text-green-700 rounded-lg mb-4">{saveMessage}</div>}
+          {saveError && <div className="p-3 text-sm bg-red-50 border border-red-200 text-red-600 rounded-lg mb-4">{saveError}</div>}
+          
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
-              {editing ? (
+              {isEditing ? (
                 <input
                   type="text"
-                  value={editData.username}
-                  onChange={(e) => setEditData({ ...editData, username: e.target.value })}
+                  value={formData.username}
+                  onChange={(e) => updateFormField('username', e.target.value)}
                   className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                 />
               ) : (
@@ -422,11 +416,11 @@ export const ProfileView: React.FC = () => {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-              {editing ? (
+              {isEditing ? (
                 <input
                   type="email"
-                  value={editData.email}
-                  onChange={(e) => setEditData({ ...editData, email: e.target.value })}
+                  value={formData.email}
+                  onChange={(e) => updateFormField('email', e.target.value)}
                   className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                 />
               ) : (
@@ -439,11 +433,11 @@ export const ProfileView: React.FC = () => {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-              {editing ? (
+              {isEditing ? (
                 <input
                   type="tel"
-                  value={editData.phone}
-                  onChange={(e) => setEditData({ ...editData, phone: e.target.value })}
+                  value={formData.phone}
+                  onChange={(e) => updateFormField('phone', e.target.value)}
                   className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                   placeholder="Enter phone number"
                 />
@@ -457,27 +451,83 @@ export const ProfileView: React.FC = () => {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
-              {editing ? (
+              {isEditing ? (
                 <div className="flex gap-2">
                   <input
                     type="text"
-                    value={editData.location}
-                    onChange={(e) => setEditData({ ...editData, location: e.target.value })}
+                    value={formData.location}
+                    onChange={(e) => updateFormField('location', e.target.value)}
                     className="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                     placeholder="Enter your location"
                   />
                   <button
                     type="button"
-                    onClick={handleGetLocation}
-                    disabled={fetchingLocation}
-                    className="px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                    title="Get current location"
+                    onClick={async () => {
+                      if (navigator.geolocation) {
+                        setSaveError('Getting your location...');
+                        navigator.geolocation.getCurrentPosition(
+                          async (position) => {
+                            // Get coordinates
+                            const lat = position.coords.latitude;
+                            const lng = position.coords.longitude;
+                            
+                            try {
+                              // Reverse geocode to get real address
+                              const response = await fetch(
+                                `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1`,
+                                {
+                                  headers: { 'User-Agent': 'TimeBank-App/1.0' }
+                                }
+                              );
+                              
+                              if (response.ok) {
+                                const data = await response.json();
+                                const address = data.address;
+                                
+                                // Build readable address from components
+                                let locationParts = [];
+                                if (address.house_number && address.road) {
+                                  locationParts.push(`${address.house_number} ${address.road}`);
+                                } else if (address.road) {
+                                  locationParts.push(address.road);
+                                }
+                                if (address.neighbourhood) locationParts.push(address.neighbourhood);
+                                if (address.suburb) locationParts.push(address.suburb);
+                                if (address.city || address.town || address.village) {
+                                  locationParts.push(address.city || address.town || address.village);
+                                }
+                                if (address.state) locationParts.push(address.state);
+                                if (address.country) locationParts.push(address.country);
+                                
+                                const fullAddress = locationParts.length > 0 
+                                  ? locationParts.join(', ') 
+                                  : data.display_name || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+                                
+                                updateFormField('location', fullAddress);
+                                setSaveError('');
+                              } else {
+                                // Fallback to coordinates if geocoding fails
+                                updateFormField('location', `${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+                                setSaveError('');
+                              }
+                            } catch (error) {
+                              // Final fallback to coordinates
+                              updateFormField('location', `${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+                              setSaveError('');
+                            }
+                          },
+                          () => {
+                            setSaveError('Location access denied. Please enable location permissions.');
+                          }
+                        );
+                      } else {
+                        setSaveError('Geolocation not supported by this browser');
+                      }
+                    }}
+                    className="px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors flex items-center gap-2"
+                    title="Get current location with address"
                   >
-                    {fetchingLocation ? (
-                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    ) : (
-                      <MapPin className="w-5 h-5" />
-                    )}
+                    <MapPin className="w-5 h-5" />
                   </button>
                 </div>
               ) : (
@@ -499,10 +549,10 @@ export const ProfileView: React.FC = () => {
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Bio</label>
-              {editing ? (
+              {isEditing ? (
                 <textarea
-                  value={editData.bio}
-                  onChange={(e) => setEditData({ ...editData, bio: e.target.value })}
+                  value={formData.bio}
+                  onChange={(e) => updateFormField('bio', e.target.value)}
                   rows={4}
                   className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                   placeholder="Tell others about yourself..."
@@ -516,11 +566,11 @@ export const ProfileView: React.FC = () => {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Skills</label>
-              {editing ? (
+              {isEditing ? (
                 <input
                   type="text"
-                  value={editData.skills}
-                  onChange={(e) => setEditData({ ...editData, skills: e.target.value })}
+                  value={formData.skills}
+                  onChange={(e) => updateFormField('skills', e.target.value)}
                   className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                   placeholder="Enter skills separated by commas"
                 />
