@@ -26,6 +26,19 @@ export const DashboardView: React.FC = () => {
     }
   }, [user]);
 
+  // Listen for XP/profile refresh events
+  useEffect(() => {
+    const handleRefresh = () => {
+      console.log('🔄 Dashboard refreshing due to XP update');
+      if (user) {
+        loadDashboardData();
+      }
+    };
+
+    window.addEventListener('timebank:refreshProfileAndDashboard', handleRefresh);
+    return () => window.removeEventListener('timebank:refreshProfileAndDashboard', handleRefresh);
+  }, [user]);
+
   const loadDashboardData = async () => {
     if (!user) return;
 
@@ -56,7 +69,7 @@ export const DashboardView: React.FC = () => {
   }
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
+    <div className="max-w-7xl mx-auto space-y-6 relative">
       <div>
         <h1 className="text-3xl font-bold text-gray-800">Welcome back, {user?.username}!</h1>
         <p className="text-gray-600 mt-1">Here's what's happening with your TimeBank account</p>
@@ -274,6 +287,8 @@ export const DashboardView: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Firebase Service Monitor removed per request */}
     </div>
   );
 };

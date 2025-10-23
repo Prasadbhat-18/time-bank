@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Phone, Plus, X, Edit, Trash2 } from 'lucide-react';
+import { Phone, Plus, Edit, Trash2 } from 'lucide-react';
 
 interface EmergencyContact {
   id: string;

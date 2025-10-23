@@ -1,31 +1,56 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { UserPlus } from 'lucide-react';
+import { UserPlus, Sparkles } from 'lucide-react';
 
 interface RegisterFormProps {
   onToggleMode: () => void;
 }
 
 export const RegisterForm: React.FC<RegisterFormProps> = ({ onToggleMode }) => {
-  const { register } = useAuth();
+  const { register, loginWithGoogle } = useAuth();
+  const [registrationMethod] = useState<'email' | 'phone'>('email');
   const [email, setEmail] = useState('');
+  // Phone registration disabled for now
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  // const [verificationCode] = useState('');
+  // Future phone OTP flow placeholders
+  // const [generatedOTP, setGeneratedOTP] = useState('');
+  // const [otpSent, setOtpSent] = useState(false);
+  // const [otpLoading, setOtpLoading] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // const handlePhoneChange = (value: string) => {
+  //   setPhone(value);
+  //   setOtpSent(false);
+  //   setGeneratedOTP('');
+  //   setVerificationCode('');
+  //   setError('');
+  //   if (value.length >= 10) {
+  //     sendOTP(value);
+  //   }
+  // };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
-    if (password !== confirmPassword) {
-      setError('Passwords do not match');
-      return;
+    if (registrationMethod === 'email') {
+      if (password !== confirmPassword) {
+        setError('Passwords do not match');
+        return;
+      }
+
+      if (password.length < 6) {
+        setError('Password must be at least 6 characters');
+        return;
+      }
     }
 
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters');
+    if (!username.trim()) {
+      setError('Username is required');
       return;
     }
 
@@ -33,8 +58,8 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onToggleMode }) => {
 
     try {
       await register(email, password, username);
-    } catch (err) {
-      setError('Registration failed. Please try again.');
+    } catch (err: any) {
+      setError(err.message || 'Registration failed. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -56,6 +81,87 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({ onToggleMode }) => {
           {error}
         </div>
       )}
+
+      {/* Quick Demo Access */}
+      <div className="mb-6 p-4 bg-gradient-to-br from-emerald-50 to-teal-50 border-2 border-emerald-200 rounded-xl">
+        <div className="text-center mb-4">
+          <h3 className="text-lg font-semibold text-emerald-700 flex items-center justify-center gap-2">
+            <Sparkles className="w-5 h-5" />
+            Quick Demo Access
+          </h3>
+          <p className="text-sm text-emerald-600 mt-1">Try TimeBank instantly with demo accounts</p>
+        </div>
+        
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Google Sign-In */}
+          <button
+            type="button"
+            onClick={async () => {
+              setLoading(true);
+              try {
+                await loginWithGoogle();
+              } catch (err: any) {
+                setError(err.message);
+              } finally {
+                setLoading(false);
+              }
+            }}
+            disabled={loading}
+            className="p-4 bg-white border-2 border-red-300 rounded-xl hover:border-red-400 hover:bg-red-50 transition-all group disabled:opacity-50 hover:shadow-lg"
+          >
+            <div className="text-center">
+              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                {loading ? (
+                  <div className="w-5 h-5 border-2 border-red-600/30 border-t-red-600 rounded-full animate-spin" />
+                ) : (
+                  <span className="text-red-600 font-bold text-lg">G</span>
+                )}
+              </div>
+              <p className="font-semibold text-red-700 text-base">Google Account</p>
+              <p className="text-sm text-red-600">demo.google@gmail.com</p>
+            </div>
+          </button>
+
+          {/* Demo User */}
+          <button
+            type="button"
+            onClick={async () => {
+              setLoading(true);
+              try {
+                await register('demo@timebank.com', 'demo123', 'demo_user');
+              } catch (err: any) {
+                setError(err.message);
+              } finally {
+                setLoading(false);
+              }
+            }}
+            disabled={loading}
+            className="p-4 bg-white border-2 border-emerald-300 rounded-xl hover:border-emerald-400 hover:bg-emerald-50 transition-all group disabled:opacity-50 hover:shadow-lg"
+          >
+            <div className="text-center">
+              <div className="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                {loading ? (
+                  <div className="w-5 h-5 border-2 border-emerald-600/30 border-t-emerald-600 rounded-full animate-spin" />
+                ) : (
+                  <span className="text-emerald-600 font-bold text-lg">D</span>
+                )}
+              </div>
+              <p className="font-semibold text-emerald-700 text-base">Demo Account</p>
+              <p className="text-sm text-emerald-600">demo@timebank.com</p>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      {/* Divider */}
+      <div className="relative mb-4">
+        <div className="absolute inset-0 flex items-center">
+          <div className="w-full border-t border-gray-300"></div>
+        </div>
+        <div className="relative flex justify-center text-sm">
+          <span className="px-3 bg-white text-gray-500">Or create your account</span>
+        </div>
+      </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>

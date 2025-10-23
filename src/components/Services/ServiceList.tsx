@@ -5,6 +5,10 @@ import { Service, Skill } from '../../types';
 import { dataService } from '../../services/dataService';
 import { ServiceModal } from './ServiceModal';
 import { BookingModal } from './BookingModal';
+import { ProfileModal } from '../Profile/ProfileModal';
+import { LevelBadge } from '../Level/LevelProgress';
+// Chat entry is available only from BookingModal to avoid duplicates
+import { InfiniteCarousel } from './InfiniteCarousel';
 
 export const ServiceList: React.FC = () => {
   const { user } = useAuth();
@@ -14,17 +18,27 @@ export const ServiceList: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'offer' | 'request'>('all');
   const [filterCategory, setFilterCategory] = useState<string>('');
+  const [hideMine, setHideMine] = useState<boolean>(false);
+  const [minCredits, setMinCredits] = useState<string>('');
+  const [maxCredits, setMaxCredits] = useState<string>('');
+  const [sortBy, setSortBy] = useState<'newest' | 'credits_high' | 'credits_low'>('newest');
   const [showServiceModal, setShowServiceModal] = useState(false);
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [selectedService, setSelectedService] = useState<Service | null>(null);
+  const [profileToShow, setProfileToShow] = useState<{ id?: string; user?: any } | null>(null);
+  // Removed chatPeer; chat is opened from BookingModal only
 
   useEffect(() => {
     loadData();
-  }, [filterType, filterCategory, searchTerm]);
+    // Also subscribe to global service refresh events
+    const refresh = () => loadData();
+    window.addEventListener('timebank:services:refresh', refresh);
+    return () => window.removeEventListener('timebank:services:refresh', refresh);
+  }, [filterType, filterCategory, searchTerm, hideMine, minCredits, maxCredits, sortBy, user?.id]);
 
   const loadData = async () => {
     setLoading(true);
-    const [servicesData, skillsData] = await Promise.all([
+    let [servicesData, skillsData] = await Promise.all([
       dataService.getServices({
         type: filterType === 'all' ? undefined : filterType,
         category: filterCategory || undefined,
@@ -32,12 +46,83 @@ export const ServiceList: React.FC = () => {
       }),
       dataService.getSkills(),
     ]);
-    setServices(servicesData);
+
+    // Fallback: if a service has no provider object yet (e.g. immediate reload after creation
+    // before Firestore roundtrip enriches it), inject the currently logged in user for their own services.
+    if (user?.id) {
+      servicesData = servicesData.map(s => {
+        if (!s.provider && s.provider_id === user.id) {
+          return { ...s, provider: user } as Service;
+        }
+        return s;
+      });
+    }
+    
+    // Debug log for cross-user booking
+    console.log('Current user:', user?.id, user?.email);
+  console.log('All services:', servicesData.map(s => ({ id: s.id, title: s.title, provider_id: s.provider_id, provider_username: s.provider?.username })));
+    console.log('Services you can book:', servicesData.filter(s => s.provider_id !== user?.id));
+  // expose debug counts
+  const total = servicesData.length;
+  const mine = servicesData.filter(s => s.provider_id === user?.id).length;
+  const others = total - mine;
+  console.log(`services: total=${total}, mine=${mine}, others=${others}`);
+    
+    // Apply client-side additional filters
+    let filtered = [...servicesData];
+    if (hideMine && user?.id) {
+      filtered = filtered.filter(s => s.provider_id !== user.id);
+    }
+    const min = parseFloat(minCredits);
+    const max = parseFloat(maxCredits);
+    if (!isNaN(min)) filtered = filtered.filter(s => (s.credits_per_hour ?? 0) >= min);
+    if (!isNaN(max)) filtered = filtered.filter(s => (s.credits_per_hour ?? 0) <= max);
+
+    // Apply client-side sorting
+    const sorted = [...filtered];
+    if (sortBy === 'newest') {
+      sorted.sort((a, b) => {
+        const ta = new Date(a.created_at || 0).getTime();
+        const tb = new Date(b.created_at || 0).getTime();
+        return tb - ta; // newest first
+      });
+    } else if (sortBy === 'credits_high') {
+      sorted.sort((a, b) => (b.credits_per_hour ?? 0) - (a.credits_per_hour ?? 0));
+    } else if (sortBy === 'credits_low') {
+      sorted.sort((a, b) => (a.credits_per_hour ?? 0) - (b.credits_per_hour ?? 0));
+    }
+
+    setServices(sorted);
     setSkills(skillsData);
     setLoading(false);
   };
 
   const categories = Array.from(new Set(skills.map((s) => s.category)));
+
+  const timeAgo = (iso?: string) => {
+    if (!iso) return '';
+    const d = new Date(iso).getTime();
+    const diff = Date.now() - d;
+    const sec = Math.floor(diff / 1000);
+    if (sec < 10) return 'just now';
+    if (sec < 60) return `${sec}s ago`;
+    const min = Math.floor(sec / 60);
+    if (min < 60) return `${min}m ago`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return `${hr}h ago`;
+    const day = Math.floor(hr / 24);
+    if (day === 1) return '1 day ago';
+    return `${day} days ago`;
+  };
+
+  const formatDateTime = (iso?: string) => {
+    if (!iso) return '';
+    try {
+      return new Date(iso).toLocaleString();
+    } catch {
+      return iso;
+    }
+  };
 
   const handleBookService = (service: Service) => {
     setSelectedService(service);
@@ -50,6 +135,7 @@ export const ServiceList: React.FC = () => {
         <div>
           <h1 className="text-3xl font-bold text-gray-800">Service Marketplace</h1>
           <p className="text-gray-600 mt-1">Discover and exchange skills with the community</p>
+            <div className="text-sm text-gray-500 mt-1">Debug: services total {services.length}</div>
         </div>
         <button
           onClick={() => setShowServiceModal(true)}
@@ -73,7 +159,16 @@ export const ServiceList: React.FC = () => {
             />
           </div>
 
-          <div className="flex gap-3">
+          <div className="flex gap-3 flex-wrap">
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as 'newest' | 'credits_high' | 'credits_low')}
+              className="px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+            >
+              <option value="newest">Sort: Newest first</option>
+              <option value="credits_high">Sort: Credits high → low</option>
+              <option value="credits_low">Sort: Credits low → high</option>
+            </select>
             <select
               value={filterType}
               onChange={(e) => setFilterType(e.target.value as 'all' | 'offer' | 'request')}
@@ -96,6 +191,39 @@ export const ServiceList: React.FC = () => {
                 </option>
               ))}
             </select>
+
+            <label className="inline-flex items-center gap-2 text-sm text-gray-700 px-3 py-2 border border-gray-300 rounded-lg">
+              <input type="checkbox" checked={hideMine} onChange={(e) => setHideMine(e.target.checked)} />
+              Hide my services
+            </label>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                inputMode="decimal"
+                placeholder="Min credits"
+                value={minCredits}
+                onChange={(e) => setMinCredits(e.target.value)}
+                className="w-28 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+              />
+              <span className="text-gray-500">-</span>
+              <input
+                type="number"
+                inputMode="decimal"
+                placeholder="Max credits"
+                value={maxCredits}
+                onChange={(e) => setMaxCredits(e.target.value)}
+                className="w-28 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={() => { setFilterType('all'); setFilterCategory(''); setSearchTerm(''); setHideMine(false); setMinCredits(''); setMaxCredits(''); }}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50"
+            >
+              Reset
+            </button>
           </div>
         </div>
       </div>
@@ -125,6 +253,13 @@ export const ServiceList: React.FC = () => {
                   }`}
                 ></div>
 
+                {/* Carousel for service images */}
+                {service.imageUrls && service.imageUrls.length > 0 && (
+                  <div className="mb-4">
+                    <InfiniteCarousel images={service.imageUrls} />
+                  </div>
+                )}
+
                 <div className="p-6">
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex-1">
@@ -137,9 +272,17 @@ export const ServiceList: React.FC = () => {
                       >
                         {service.type === 'offer' ? 'Service Offered' : 'Service Needed'}
                       </span>
-                      <h3 className="text-lg font-semibold text-gray-800 mt-2 group-hover:text-emerald-600 transition">
-                        {service.title}
-                      </h3>
+                      <div className="flex items-center gap-2 mt-2">
+                        <h3 className="text-lg font-semibold text-gray-800 group-hover:text-emerald-600 transition">
+                          {service.title}
+                        </h3>
+                        <span
+                          className="text-xs text-gray-500"
+                          title={`Posted ${formatDateTime(service.created_at)}`}
+                        >
+                          • posted {timeAgo(service.created_at)}
+                        </span>
+                      </div>
                     </div>
                   </div>
 
@@ -157,41 +300,68 @@ export const ServiceList: React.FC = () => {
                     )}
                   </div>
 
-                  {service.provider && (
-                    <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden">
-                          {service.provider.avatar_url ? (
+                  <div className="flex items-center justify-between pt-4 border-t border-gray-100">
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => setProfileToShow({ id: service.provider_id, user: service.provider })}
+                        className="flex items-center gap-3 text-left hover:opacity-80 transition"
+                      >
+                        <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden flex-shrink-0">
+                          {service.provider?.avatar_url ? (
                             <img
                               src={service.provider.avatar_url}
-                              alt={service.provider.username}
+                              alt={service.provider?.username || service.provider_id}
                               className="w-full h-full object-cover"
                             />
                           ) : (
                             <User className="w-5 h-5 text-gray-400" />
                           )}
                         </div>
-                        <div>
-                          <p className="text-sm font-medium text-gray-800">{service.provider.username}</p>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-medium text-gray-800">{service.provider?.username || service.provider_id}</p>
+                            <LevelBadge level={service.provider?.level || 1} size="sm" showTitle={false} />
+                          </div>
                           <div className="flex items-center gap-1">
                             <Star className="w-3 h-3 text-amber-500 fill-amber-500" />
                             <span className="text-xs text-gray-600">
-                              {service.provider.reputation_score.toFixed(1)}
+                              {(service.provider?.reputation_score ?? 0).toFixed(1)}
                             </span>
                           </div>
                         </div>
-                      </div>
-
-                      {service.provider_id !== user?.id && (
-                        <button
-                          onClick={() => handleBookService(service)}
-                          className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm rounded-lg transition"
-                        >
-                          Book Now
-                        </button>
-                      )}
+                      </button>
                     </div>
-                  )}
+
+                    {service.provider_id !== user?.id ? (
+                      <button
+                        onClick={() => handleBookService(service)}
+                        className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm rounded-lg transition"
+                      >
+                        Book Now
+                      </button>
+                    ) : (
+                      <div className="flex items-center gap-3">
+                        <span className="px-4 py-2 bg-gray-200 text-gray-500 text-sm rounded-lg">
+                          Your Service
+                        </span>
+                        <button
+                          onClick={async () => {
+                            try {
+                              await dataService.deleteService(service.id);
+                              await loadData();
+                              try { window.dispatchEvent(new CustomEvent('timebank:services:refresh')); } catch {}
+                            } catch (err) {
+                              console.error('Failed to cancel service', err);
+                              alert('Failed to cancel service. Please try again.');
+                            }
+                          }}
+                          className="px-3 py-2 bg-red-100 text-red-600 text-sm rounded-lg border border-red-200"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             ))
@@ -221,6 +391,16 @@ export const ServiceList: React.FC = () => {
           }}
         />
       )}
+
+      {profileToShow && (
+        <ProfileModal
+          userId={profileToShow.id}
+          userObj={profileToShow.user}
+          onClose={() => setProfileToShow(null)}
+        />
+      )}
+
+      {/* Chat modal intentionally removed here; use BookingModal -> Chat before booking */}
     </div>
   );
 };
