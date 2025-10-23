@@ -7,6 +7,7 @@ import {
   updatePassword,
   reauthenticateWithCredential,
   EmailAuthProvider,
+  signInAnonymously,
 } from 'firebase/auth';
 import {
   doc,
@@ -26,6 +27,7 @@ import {
 } from 'firebase/firestore';
 import { User } from '../types';
 import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
+import { twilioAuthService } from './twilioAuthService';
 
 function mapFirebaseUserToUser(uid: string, data: Record<string, unknown>): User {
   return {
@@ -45,7 +47,62 @@ function mapFirebaseUserToUser(uid: string, data: Record<string, unknown>): User
   } as User;
 }
 
+
+
 class FirebaseService {
+  async sendPhoneVerificationCode(phoneNumber: string): Promise<boolean> {
+    try {
+      return await twilioAuthService.sendVerificationCode(phoneNumber);
+    } catch (error) {
+      console.error('Error sending verification code:', error);
+      throw error;
+    }
+  }
+
+  async verifyPhoneCode(phoneNumber: string, code: string): Promise<User> {
+    try {
+      const isVerified = await twilioAuthService.verifyCode(phoneNumber, code);
+      if (isVerified) {
+        // Create an anonymous user and link the phone
+        const userCredential = await signInAnonymously(auth);
+        const uid = userCredential.user.uid;
+        
+        // Create a user profile
+        const userData = {
+          id: uid,
+          email: '',
+          username: `user_${uid.slice(0, 6)}`,
+          phoneNumber,
+          bio: '',
+          reputation_score: 5.0,
+          total_reviews: 0,
+          created_at: new Date().toISOString(),
+          level: 1,
+          experience_points: 0,
+          services_completed: 0,
+          services_requested: 0,
+          custom_credits_enabled: false,
+        };
+
+        await this.createUserProfile(userData);
+        return userData;
+      }
+      throw new Error('Verification failed');
+    } catch (error) {
+      console.error('Error verifying code:', error);
+      throw error;
+    }
+  }
+
+  async createUserProfile(user: User): Promise<void> {
+    const userRef = doc(db, 'users', user.id);
+    await setDoc(userRef, {
+      ...user,
+      created_at: new Date().toISOString(),
+      updated_at: serverTimestamp(),
+    });
+  }
+
   async login(email: string, password: string): Promise<User | null> {
     try {
       const cred = await signInWithEmailAndPassword(auth, email, password);

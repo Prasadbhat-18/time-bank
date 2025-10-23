@@ -231,6 +231,10 @@ export const dataService = {
     return mockUsers.find(user => user.id === userId) || null;
   },
 
+  async getUserByPhone(phone: string): Promise<User | null> {
+    return mockUsers.find(user => user.phone === phone) || null;
+  },
+
   async createUser(user: User): Promise<User> {
     // Check if user already exists
     const existingUser = mockUsers.find(u => u.id === user.id);

@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { User } from '../types';
 import { firebaseService } from '../services/firebaseService';
 import { dataService } from '../services/dataService';
+import { twilioService } from '../services/twilioService';
 import { auth, isFirebaseConfigured } from '../firebase';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 
@@ -361,41 +362,42 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const loginWithPhone = async (phone: string, code: string) => {
-    if (isFirebaseConfigured() && auth) {
-      // Firebase phone authentication would go here
-      throw new Error('Phone authentication not implemented for Firebase yet');
-    } else {
-      // Mock phone authentication - accept any 6-digit code
-      if (code.length === 6 && /^\d{6}$/.test(code)) {
-        // Check if it's a predefined user
-        const mockUsers = [
-          { phone: '+1-555-0101', user: { id: 'user-1', email: 'sarah@example.com', username: 'sarah_dev', bio: 'Full-stack developer', reputation_score: 4.8, total_reviews: 12, created_at: new Date('2024-01-15').toISOString() } },
-          { phone: '+1-555-DEMO', user: mockUser },
-          { phone: '+1-555-0100', user: { id: 'official-account', email: 'official@timebank.com', username: 'timebank_official', bio: 'Official TimeBank account', reputation_score: 5.0, total_reviews: 25, created_at: new Date('2024-01-01').toISOString() } }
-        ];
-        
-        const foundUser = mockUsers.find(u => u.phone === phone);
-        if (foundUser) {
-          setUser(foundUser.user);
-          saveUserToStorage(foundUser.user);
-        } else {
-          // Create a new user for any other phone number
-          const newUser: User = {
-            id: `phone-${Date.now()}`,
-            email: `${phone.replace(/[^0-9]/g, '')}@phone.timebank.com`,
-            phone,
-            username: `user_${phone.slice(-4)}`,
-            bio: `User registered with phone ${phone}`,
-            reputation_score: 5.0,
-            total_reviews: 0,
-            created_at: new Date().toISOString()
-          };
-          setUser(newUser);
-          saveUserToStorage(newUser);
-        }
-      } else {
-        throw new Error('Invalid verification code. Please enter a 6-digit code.');
+    try {
+      if (!code) {
+        // Send OTP
+        const response = await twilioService.sendOTP(phone);
+        console.log('OTP sent successfully:', response.message);
+        return;
       }
+
+      // Verify OTP
+      const response = await twilioService.verifyOTP(phone, code);
+      console.log('OTP verified successfully:', response.message);
+
+      // If verification successful, create or fetch user
+      let phoneUser = await dataService.getUserByPhone(phone);
+      
+      if (!phoneUser) {
+        // Create new user if doesn't exist
+        phoneUser = {
+          id: `phone-${Date.now()}`,
+          email: `${phone.replace(/[^0-9]/g, '')}@phone.timebank.com`,
+          phone,
+          username: `user_${phone.slice(-4)}`,
+          bio: 'TimeBank user verified via phone',
+          reputation_score: 5.0,
+          total_reviews: 0,
+          created_at: new Date().toISOString()
+        };
+        await dataService.createUser(phoneUser);
+      }
+
+      setUser(phoneUser);
+      saveUserToStorage(phoneUser);
+
+    } catch (error: any) {
+      console.error('Phone authentication error:', error);
+      throw new Error(error.message || 'Authentication failed');
     }
   };
 

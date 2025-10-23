@@ -1,58 +1,137 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { Eye, EyeOff, Mail, Phone, Lock, Clock } from 'lucide-react';
+import { Eye, EyeOff, Mail, Lock, Clock, ArrowRight, Zap, Phone } from 'lucide-react';
+import { twilioService } from '../../api/twilioService';
+import PhoneInput from 'react-phone-number-input';
+import 'react-phone-number-input/style.css';
+import './PhoneInput.css';
 import { ResetPasswordModal } from './ResetPasswordModal';
 
 interface LoginFormProps {
   onToggleMode: () => void;
 }
 
+// Features array for the carousel
+const features = [
+  {
+    icon: Clock,
+    title: "Time-Based Trading",
+    description: "Every hour of service equals one time credit",
+    color: "cyan",
+    stat: "1 Hour = 1 Credit"
+  },
+  {
+    icon: Zap,
+    title: "Real-Time Trading",
+    description: "Schedule services instantly with live availability",
+    color: "yellow",
+    stat: "Instant Matching"
+  }
+];
+
 export const LoginForm: React.FC<LoginFormProps> = ({ onToggleMode }) => {
-  const { login, loginWithPhone, loginWithGoogle } = useAuth();
+  const { login, loginWithGoogle, loginWithPhone } = useAuth();
   const [loginMethod, setLoginMethod] = useState<'email' | 'phone'>('email');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [phone, setPhone] = useState('');
+  const [phone, setPhone] = useState<string | undefined>();
   const [verificationCode, setVerificationCode] = useState('');
-  const [generatedOTP, setGeneratedOTP] = useState('');
-  const [otpSent, setOtpSent] = useState(false);
-  const [otpLoading, setOtpLoading] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [otpSending, setOtpSending] = useState(false);
+  const [otpSent, setOtpSent] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showReset, setShowReset] = useState(false);
+  const [currentTime, setCurrentTime] = useState(new Date());
+  const [currentFeatureIndex, setCurrentFeatureIndex] = useState(0);
+  const [resendTimer, setResendTimer] = useState(0);
 
-  const sendOTP = async (phoneNumber: string) => {
-    if (!phoneNumber.trim()) return;
+  // Real-time clock update
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Auto-slide features carousel
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentFeatureIndex((prev) => (prev + 1) % features.length);
+    }, 4000); // Change feature every 4 seconds
     
-    setOtpLoading(true);
-    setError('');
-    
-    // Simulate API delay
-    setTimeout(() => {
-      // Generate a 6-digit OTP
-      const otp = Math.floor(100000 + Math.random() * 900000).toString();
-      setGeneratedOTP(otp);
-      setOtpSent(true);
-      setOtpLoading(false);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Auto-send OTP when valid phone number is entered
+  useEffect(() => {
+    if (loginMethod === 'phone' && phone?.match(/^\+[1-9]\d{10,14}$/)) {
+      const timer = setTimeout(() => {
+        if (!otpSent && !otpSending) {
+          handleSendOTP();
+        }
+      }, 1000); // Wait 1 second after user stops typing
       
-      // For demo purposes, we'll also set the verification code automatically after 2 seconds
-      setTimeout(() => {
-        setVerificationCode(otp);
-      }, 2000);
-    }, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [phone, loginMethod]);
+
+  const handleSendOTP = async () => {
+    if (!phone || !phone.match(/^\+[1-9]\d{10,14}$/)) {
+      setError('Please enter a valid phone number with country code');
+      return;
+    }
+
+    setOtpSending(true);
+    setError('');
+
+    try {
+      await twilioService.sendVerificationCode(phone);
+      setOtpSent(true);
+      setError('');
+      // Start 30 second countdown for resend
+      setResendTimer(30);
+      const interval = setInterval(() => {
+        setResendTimer((prev) => {
+          if (prev <= 1) {
+            clearInterval(interval);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } catch (err: any) {
+      setError(err.message || 'Failed to send OTP');
+    } finally {
+      setOtpSending(false);
+    }
   };
 
-  const handlePhoneChange = (value: string) => {
-    setPhone(value);
-    setOtpSent(false);
-    setGeneratedOTP('');
-    setVerificationCode('');
+  const handleVerifyOTP = async () => {
+    if (!verificationCode) {
+      setError('Please enter the verification code');
+      return;
+    }
+
+    if (!phone) {
+      setError('Please enter your phone number');
+      return;
+    }
+
+    setLoading(true);
     setError('');
-    
-    // Auto-send OTP when phone number looks complete
-    if (value.length >= 10) {
-      sendOTP(value);
+
+    try {
+      const isValid = await twilioService.verifyCode(phone, verificationCode);
+      if (isValid) {
+        await loginWithPhone(phone, verificationCode);
+      } else {
+        throw new Error('Invalid verification code');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Invalid verification code');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -64,8 +143,10 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onToggleMode }) => {
     try {
       if (loginMethod === 'email') {
         await login(email, password);
+      } else if (otpSent) {
+        await handleVerifyOTP();
       } else {
-        await loginWithPhone(phone, verificationCode);
+        await handleSendOTP();
       }
     } catch (err: any) {
       setError(err.message || 'Authentication failed');
@@ -284,31 +365,51 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onToggleMode }) => {
             </div>
           )}
 
-          {/* Google Sign-In */}
-          <button
-            type="button"
-            onClick={async () => {
-              setLoading(true);
-              try {
-                await loginWithGoogle();
-              } catch (err: any) {
-                setError(err.message);
-              } finally {
-                setLoading(false);
-              }
-            }}
-            disabled={loading}
-            className="w-full mb-6 p-4 bg-white border-2 border-gray-200 rounded-xl hover:border-gray-300 hover:bg-gray-50 transition-all duration-200 group disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <div className="flex items-center justify-center gap-3">
-              <div className="w-6 h-6 bg-gradient-to-br from-red-500 to-yellow-500 rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold text-sm">G</span>
+          {/* Social/Phone Sign-In Options */}
+          <div className="space-y-4 mb-6">
+            {/* Google Sign-In */}
+            <button
+              type="button"
+              onClick={async () => {
+                setLoading(true);
+                try {
+                  await loginWithGoogle();
+                } catch (err: any) {
+                  setError(err.message);
+                } finally {
+                  setLoading(false);
+                }
+              }}
+              disabled={loading}
+              className="w-full p-4 bg-white border-2 border-gray-200 rounded-xl hover:border-gray-300 hover:bg-gray-50 transition-all duration-200 group disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <div className="flex items-center justify-center gap-3">
+                <div className="w-6 h-6 bg-gradient-to-br from-red-500 to-yellow-500 rounded-lg flex items-center justify-center">
+                  <span className="text-white font-bold text-sm">G</span>
+                </div>
+                <span className="font-semibold text-gray-700 group-hover:text-gray-900">
+                  {loading && !loginMethod ? 'Signing in...' : 'Continue with Google'}
+                </span>
               </div>
-              <span className="font-semibold text-gray-700 group-hover:text-gray-900">
-                {loading ? 'Signing in...' : 'Continue with Google'}
-              </span>
-            </div>
-          </button>
+            </button>
+
+            {/* Phone Sign-In */}
+            <button
+              type="button"
+              onClick={() => setLoginMethod('phone')}
+              disabled={loading}
+              className="w-full p-4 bg-white border-2 border-gray-200 rounded-xl hover:border-gray-300 hover:bg-gray-50 transition-all duration-200 group disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <div className="flex items-center justify-center gap-3">
+                <div className="w-6 h-6 bg-gradient-to-br from-cyan-500 to-blue-500 rounded-lg flex items-center justify-center">
+                  <Phone className="w-4 h-4 text-white" />
+                </div>
+                <span className="font-semibold text-gray-700 group-hover:text-gray-900">
+                  Continue with Phone
+                </span>
+              </div>
+            </button>
+          </div>
 
           {/* Divider */}
           <div className="relative mb-6">
@@ -322,65 +423,157 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onToggleMode }) => {
 
           {/* Login Form */}
           <form onSubmit={handleSubmit} className="space-y-5">
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
-                Email address
-              </label>
-              <div className="relative">
-                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <input
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  placeholder="you@example.com"
-                  className="w-full pl-12 pr-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 outline-none transition-all text-gray-900 placeholder-gray-400"
-                  required
-                />
-              </div>
-            </div>
+            {loginMethod === 'email' && (
+              <>
+                {/* Email Form */}
+                <div>
+                  <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
+                    Email address
+                  </label>
+                  <div className="relative">
+                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                    <input
+                      id="email"
+                      type="email"
+                      value={email}
+                      onChange={e => setEmail(e.target.value)}
+                      placeholder="you@example.com"
+                      className="w-full pl-12 pr-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 outline-none transition-all text-gray-900 placeholder-gray-400"
+                      required={loginMethod === 'email'}
+                    />
+                  </div>
+                </div>
 
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
-                Password
-              </label>
-              <div className="relative">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <input
-                  id="password"
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  placeholder="Enter your password"
-                  className="w-full pl-12 pr-12 py-3.5 bg-gray-50 border border-gray-200 rounded-xl focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 outline-none transition-all text-gray-900 placeholder-gray-400"
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
-                  tabIndex={-1}
-                >
-                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                </button>
+                <div>
+                  <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
+                    Password
+                  </label>
+                  <div className="relative">
+                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                    <input
+                      id="password"
+                      type={showPassword ? 'text' : 'password'}
+                      value={password}
+                      onChange={e => setPassword(e.target.value)}
+                      placeholder="Enter your password"
+                      className="w-full pl-12 pr-12 py-3.5 bg-gray-50 border border-gray-200 rounded-xl focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 outline-none transition-all text-gray-900 placeholder-gray-400"
+                      required={loginMethod === 'email'}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                      tabIndex={-1}
+                    >
+                      {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {loginMethod === 'phone' && (
+              <div className="space-y-5">
+                <div>
+                  <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-2">
+                    Phone number
+                  </label>
+                  <div className="relative">
+                    <PhoneInput
+                      id="phone"
+                      international
+                      countryCallingCodeEditable={false}
+                      defaultCountry="IN"
+                      value={phone}
+                      onChange={setPhone}
+                      className="w-full"
+                      required={loginMethod === 'phone'}
+                    />
+                  </div>
+                </div>
+
+                {otpSent && (
+                  <div className="mt-4">
+                    <div className="flex justify-between items-center mb-2">
+                      <label htmlFor="otp" className="block text-sm font-medium text-gray-700">
+                        Verification code
+                      </label>
+                      {resendTimer > 0 ? (
+                        <span className="text-sm text-gray-500">
+                          Resend in {resendTimer}s
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleSendOTP}
+                          disabled={otpSending}
+                          className="text-sm text-cyan-600 hover:text-cyan-700 font-medium disabled:opacity-50"
+                        >
+                          Resend OTP
+                        </button>
+                      )}
+                    </div>
+                    <div className="relative">
+                      <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                      <input
+                        id="otp"
+                        type="text"
+                        value={verificationCode}
+                        onChange={e => setVerificationCode(e.target.value)}
+                        placeholder="Enter 6-digit code"
+                        className="w-full pl-12 pr-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20 outline-none transition-all text-gray-900 placeholder-gray-400"
+                        required={otpSent}
+                        maxLength={6}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
-            </div>
+            )}
+            
+            {loginMethod && (
+              <button
+                type="submit"
+                disabled={loading || otpSending}
+                className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 text-white py-4 rounded-xl font-semibold hover:from-cyan-600 hover:to-blue-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-cyan-500/25 hover:shadow-xl hover:shadow-cyan-500/30 group"
+              >
+                <span className="flex items-center justify-center gap-2">
+                  {loading || otpSending ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      {otpSending ? 'Sending OTP...' : 'Verifying...'}
+                    </>
+                  ) : (
+                    <>
+                      {loginMethod === 'phone' 
+                        ? (otpSent ? 'Verify OTP' : 'Send OTP')
+                        : 'Sign in'
+                      }
+                      <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                    </>
+                  )}
+                </span>
+              </button>
+            )}
 
             {/* Submit Button */}
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || otpSending}
               className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 text-white py-4 rounded-xl font-semibold hover:from-cyan-600 hover:to-blue-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-cyan-500/25 hover:shadow-xl hover:shadow-cyan-500/30 group"
             >
               <span className="flex items-center justify-center gap-2">
-                {loading ? (
+                {loading || otpSending ? (
                   <>
                     <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Signing in...
+                    {otpSending ? 'Sending OTP...' : 'Verifying...'}
                   </>
                 ) : (
                   <>
-                    Sign in
+                    {loginMethod === 'phone' 
+                      ? (otpSent ? 'Verify OTP' : 'Send OTP')
+                      : 'Sign in'
+                    }
                     <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                   </>
                 )}

@@ -1,0 +1,81 @@
+/* Mild formal theme for Login/Register pages */
+.login-page {
+  display: flex;
+  min-height: 100vh;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+}
+
+/* Carousel */
+.carousel {
+  flex: 1 1 50%;
+  background: linear-gradient(180deg, #f7fafc 0%, #eef2f7 100%);
+  padding: 48px;
+  position: relative;
+  overflow: hidden;
+}
+
+.slide {
+  position: absolute;
+  top: 48px;
+  left: 48px;
+  right: 48px;
+  bottom: 48px;
+  padding: 32px;
+  border-radius: 16px;
+  background: white;
+  box-shadow: 0 10px 30px rgba(2,6,23,0.06);
+  opacity: 0;
+  transform: translateX(20px);
+  transition: all 600ms ease;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.slide.active {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.slide h2 {
+  font-size: 28px;
+  color: #0f172a;
+  margin-bottom: 12px;
+}
+
+.slide p {
+  color: #334155;
+  font-size: 16px;
+}
+
+.indicators { position: absolute; left: 24px; bottom: 24px; display:flex; gap:8px; }
+.dot { width:10px; height:10px; border-radius:50%; background:#cbd5e1; border:none; }
+.dot-active { background:#0ea5a4; }
+
+.auth-pane { flex: 1 1 40%; background: #fff; padding: 40px; display:flex; flex-direction:column; justify-content:center; }
+.auth-header h1 { font-size: 28px; color: #0f172a; margin-bottom:6px; }
+.auth-header .subtitle { color:#475569; }
+
+.auth-toggle { display:flex; gap:8px; margin:18px 0; }
+.toggle-btn { flex:1; padding:10px 14px; border-radius:8px; border:1px solid #e6eef5; background:#f8fafc; color:#0f172a; cursor:pointer; }
+.toggle-btn.active { background: #0ea5a4; color:white; border-color:#0ea5a4; }
+
+.auth-body { margin-top:8px; }
+.phone-entry { display:flex; gap:8px; align-items:center; }
+.country-select-input { padding:10px; border-radius:8px; border:1px solid #e2e8f0; background:white; }
+.phone-input { flex:1; padding:10px; border-radius:8px; border:1px solid #e2e8f0; }
+.primary { margin-top:10px; padding:10px 12px; background:#0ea5a4; color:white; border:none; border-radius:8px; cursor:pointer; }
+
+.register-cta { margin-top:18px; display:flex; align-items:center; gap:12px; }
+.register-link { color:#0ea5a4; text-decoration:none; font-weight:600; }
+
+/* Single pane (register)
+---------------------------------- */
+.login-page.single { justify-content:center; align-items:center; background: linear-gradient(180deg,#FBFCFE,#F7FAFC); }
+.single-pane { width:480px; box-shadow:0 10px 30px rgba(2,6,23,0.06); border-radius:12px; }
+
+/* Responsive */
+@media (max-width: 900px) {
+  .carousel { display:none; }
+  .auth-pane { flex:1 1 100%; padding:20px; }
+}

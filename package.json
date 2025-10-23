@@ -19,11 +19,12 @@
     "cors": "^2.8.5",
     "express": "^4.19.2",
     "firebase": "^10.10.0",
-    "framer-motion": "^12.23.24",
     "lucide-react": "^0.344.0",
     "nodemailer": "^6.9.13",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-phone-number-input": "^3.4.12",
+    "twilio": "^5.10.3",
     "uuid": "^9.0.1"
   },
   "devDependencies": {

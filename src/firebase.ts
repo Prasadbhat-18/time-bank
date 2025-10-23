@@ -55,9 +55,13 @@ if (isFirebaseConfigured()) {
       console.log('\u21bb Reusing existing Firebase app instance');
     }
 
-  auth = getAuth(app);
-  db = getFirestore(app);
-  storage = getStorage(app);
+    auth = getAuth(app);
+    // Set language code for Firebase Auth (used for SMS verification, etc.)
+    auth.languageCode = 'en'; // Using English for Indian audience
+    db = getFirestore(app);
+    storage = getStorage(app);
+
+    // Emulator connections disabled for production mode
   } catch (error) {
     console.warn('\u26a0\ufe0f Firebase initialization failed, using mock mode:', error);
     app = null;

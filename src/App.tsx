@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { LoginForm } from './components/Auth/LoginForm';
 import { RegisterForm } from './components/Auth/RegisterForm';
+import LoginPage from './components/Auth/LoginPage';
+import RegisterPage from './components/Auth/RegisterPage';
 import { DashboardView } from './components/Dashboard/DashboardView';
 import { ProfileView } from './components/Profile/ProfileView';
 import { WalletView } from './components/Wallet/WalletView';
@@ -148,6 +150,11 @@ function AppContent() {
   }
 
   if (!user) {
+    // Render dedicated pages when path matches
+    const path = window.location.pathname;
+    if (path === '/login') return <LoginPage />;
+    if (path === '/register') return <RegisterPage />;
+
     return (
       <div className="relative min-h-screen bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 dark:bg-gray-950 dark:text-emerald-400 dark:from-gray-950 dark:via-gray-950 dark:to-gray-950 flex items-center justify-center p-4">
         {/* Theme toggle */}
@@ -372,7 +379,4 @@ function App() {
   );
 }
 
-// At the end of LoginForm.tsx
-export const LoginForm = () => {
-  // ...your component code...
-};
+export default App;

@@ -78,7 +78,7 @@ export function useGeolocation() {
             },
             {
               enableHighAccuracy: true,
-              timeout: 30000, // Increased from 10s to 30s
+              timeout: 10000,
               maximumAge: 30000 // Allow 30 second old readings
             }
           );
@@ -109,7 +109,7 @@ export function useGeolocation() {
         },
         {
           enableHighAccuracy: true,
-          timeout: 30000, // Increased from 15s to 30s
+          timeout: 15000,
           maximumAge: 0 // Always get fresh location
         }
       );
@@ -167,7 +167,7 @@ export function useGeolocation() {
         },
         {
           enableHighAccuracy: true,
-          timeout: 30000, // Increased from 10s to 30s for slower GPS
+          timeout: 10000,
           maximumAge: 0
         }
       );

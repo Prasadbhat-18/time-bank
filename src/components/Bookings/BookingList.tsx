@@ -6,7 +6,7 @@ import { dataService } from '../../services/dataService';
 import { ReviewModal } from './ReviewModal';
 import { bookingNotificationService } from '../../services/bookingNotificationService';
 import ServiceCompletionCelebration from '../Services/ServiceCompletionCelebration';
-import { calculateLevel, calculateServiceExperience, getLevelUpBonusCredits } from '../../services/levelService';
+import { getLevelUpBonusCredits } from '../../services/levelService';
 import { XPGainToast } from '../Level/XPGainToast';
 
 export const BookingList: React.FC = () => {
@@ -83,128 +83,6 @@ export const BookingList: React.FC = () => {
     }
   };
 
-  const handleUpdateStatus = async (bookingId: string, status: 'confirmed' | 'completed' | 'cancelled') => {
-    console.log('handleUpdateStatus called:', { bookingId, status });
-    
-    if (updatingBookings.has(bookingId)) {
-      console.log('Already updating this booking, skipping...');
-      return;
-    }
-    
-    setUpdatingBookings(prev => new Set(prev).add(bookingId));
-    
-    try {
-      const booking = bookings.find(b => b.id === bookingId);
-      console.log('Found booking:', booking?.id, 'status:', booking?.status);
-      
-      if (!booking) {
-        throw new Error(`Booking not found: ${bookingId}`);
-      }
-      
-      if (status === 'completed' && user) {
-        console.log('Processing completion for provider...');
-        
-        const baseCredits = booking.service?.credits_per_hour
-          ? (booking.duration_hours || 1) * (booking.service.credits_per_hour || 1)
-          : (booking.duration_hours || 1);
-        
-        console.log('Calculated base credits:', baseCredits);
-        
-        const previousLevel = user.level || 1;
-        const prevXP = user.experience_points || 0;
-        
-        // Calculate XP rewards
-        const isFirstService = (user.services_completed || 0) === 0;
-        const xpEarned = calculateServiceExperience(5, isFirstService, 1);
-        const prospectiveLevel = calculateLevel(prevXP + xpEarned);
-        const levelUpBonus = prospectiveLevel > previousLevel ? getLevelUpBonusCredits(prospectiveLevel) : 0;
-        
-        console.log('XP calculation:', {
-          prevXP,
-          xpEarned,
-          prospectiveLevel,
-          levelUpBonus,
-          isFirstService
-        });
-        
-        // Show celebration modal
-        setCompletionData({
-          xpEarned,
-          creditsEarned: baseCredits + levelUpBonus,
-          newLevel: prospectiveLevel,
-          previousLevel,
-          totalServicesCompleted: (user.services_completed || 0) + 1,
-          rating: 5,
-          bonusInfo: { highRatingBonus: 20, consecutiveBonus: 0, perfectWeekBonus: 0 },
-        });
-        setShowCelebration(true);
-      }
-
-      console.log('Calling dataService.updateBooking with:', { bookingId, status });
-      const updatedBooking = await dataService.updateBooking(bookingId, { status });
-      console.log('Successfully updated booking:', updatedBooking);
-      
-      // Reload bookings to reflect changes
-      await loadBookings();
-      
-      // Update user context if this was a service completion
-      if (status === 'completed' && user && booking.provider_id === user.id) {
-        try {
-          console.log('🎯 Updating user context after completion...');
-          const updatedProvider = await dataService.getUserById(user.id);
-          if (updatedProvider && updateUser) {
-            console.log('📊 User stats before update:', {
-              level: user.level,
-              xp: user.experience_points,
-              services: user.services_completed
-            });
-            
-            console.log('📈 User stats after completion:', {
-              level: updatedProvider.level,
-              xp: updatedProvider.experience_points,
-              services: updatedProvider.services_completed
-            });
-
-            await updateUser({
-              level: updatedProvider.level,
-              experience_points: updatedProvider.experience_points,
-              services_completed: updatedProvider.services_completed,
-              custom_credits_enabled: updatedProvider.custom_credits_enabled,
-            });
-            
-            console.log('✅ User context updated successfully - XP bar should refresh');
-          }
-          
-          // Force refresh of XP bar and dashboard
-          window.dispatchEvent(new CustomEvent('timebank:refreshProfileAndDashboard'));
-          
-          // Also force a page refresh to ensure all components see the new data
-          setTimeout(() => {
-            window.location.reload();
-          }, 2000);
-          
-        } catch (updateErr) {
-          console.error('❌ Failed to update user context:', updateErr);
-        }
-      }
-      
-    } catch (error) {
-      console.error('Failed to update booking status:', error);
-      console.error('Error details:', {
-        bookingId,
-        status,
-        error: error instanceof Error ? error.message : error,
-        stack: error instanceof Error ? error.stack : undefined
-      });
-      alert(`Failed to update booking status: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`);
-    } finally {
-      setUpdatingBookings(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(bookingId);
-        return newSet;
-      });
-    }
-  };
 
   const handleMarkAsCompleted = async (booking: Booking) => {
     console.log('🎯 handleMarkAsCompleted called:', {

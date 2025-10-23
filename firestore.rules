@@ -15,7 +15,7 @@ service cloud.firestore {
     // Users collection - READ ALL (needed for profiles, providers, chat peers)
     // But only write your own
     match /users/{userId} {
-      allow read: if isSignedIn();
+      allow read: if true;  // Allow public read access for login/registration
       allow create: if isSignedIn() && isOwner(userId);
       allow update, delete: if isOwner(userId);
     }

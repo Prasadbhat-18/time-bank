@@ -17,42 +17,21 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({ booking, onClose, onRe
   const [loading, setLoading] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
 
-  // Only requesters can review providers
-  const isRequester = booking.requester_id === user?.id;
-  
-  // If current user is not the requester, they shouldn't be here
-  if (!isRequester) {
-    return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-2xl p-8 text-center max-w-md">
-          <div className="text-4xl mb-4">⚠️</div>
-          <h3 className="text-xl font-bold text-gray-800 mb-2">Cannot Review</h3>
-          <p className="text-gray-600 mb-4">Only service requesters can leave reviews for service providers.</p>
-          <button
-            onClick={onClose}
-            className="px-6 py-2.5 bg-gray-500 hover:bg-gray-600 text-white rounded-lg transition"
-          >
-            Close
-          </button>
-        </div>
-      </div>
-    );
-  }
-  
-  const reviewee = booking.provider;
+  const isProvider = booking.provider_id === user?.id;
+  const reviewee = isProvider ? booking.requester : booking.provider;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Only requesters review providers
-    const revieweeId = booking.provider_id;
+    // More robust check for reviewee - fall back to IDs if user objects aren't available
+    const revieweeId = isProvider ? booking.requester_id : booking.provider_id;
     
     if (!user || !revieweeId) {
       console.error('Missing user or reviewee:', { 
         user: user?.id, 
         revieweeId, 
         booking: booking.id,
-        isRequester 
+        isProvider 
       });
       alert('Error: Missing user information. Please try refreshing the page.');
       return;
@@ -125,7 +104,7 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({ booking, onClose, onRe
             <h3 className="font-semibold text-gray-800 mb-1">{booking.service?.title}</h3>
             <p className="text-sm text-gray-600">
               Review for: <span className="font-medium">
-                {reviewee?.username || 'Service Provider'}
+                {reviewee?.username || (isProvider ? 'Service Requester' : 'Service Provider')}
               </span>
             </p>
           </div>
