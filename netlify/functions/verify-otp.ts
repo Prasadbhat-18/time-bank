@@ -21,9 +21,10 @@ const handler: Handler = async (event) => {
     }
 
     // Get Twilio credentials from environment variables
-    const accountSid = process.env.TWILIO_ACCOUNT_SID;
-    const authToken = process.env.TWILIO_AUTH_TOKEN;
-    const serviceSid = process.env.TWILIO_SERVICE_SID;
+    // Support both TWILIO_ and VITE_TWILIO_ prefixes
+    const accountSid = process.env.TWILIO_ACCOUNT_SID || process.env.VITE_TWILIO_ACCOUNT_SID;
+    const authToken = process.env.TWILIO_AUTH_TOKEN || process.env.VITE_TWILIO_AUTH_TOKEN;
+    const serviceSid = process.env.TWILIO_SERVICE_SID || process.env.VITE_TWILIO_SERVICE_SID;
 
     if (!accountSid || !authToken || !serviceSid) {
       console.error('❌ Twilio credentials not configured');
@@ -31,7 +32,7 @@ const handler: Handler = async (event) => {
         statusCode: 500,
         body: JSON.stringify({
           error: 'Twilio service not configured',
-          details: 'Missing Twilio credentials in environment'
+          details: 'Missing Twilio credentials in environment. Ensure these are set in Netlify Site Settings > Build & Deploy > Environment Variables: VITE_TWILIO_ACCOUNT_SID, VITE_TWILIO_AUTH_TOKEN, VITE_TWILIO_SERVICE_SID'
         })
       };
     }
