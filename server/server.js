@@ -8,20 +8,23 @@ app.use(cors());
 app.use(express.json());
 
 // Initialize Twilio client
-const accountSid = process.env.TWILIO_ACCOUNT_SID;
-const authToken = process.env.TWILIO_AUTH_TOKEN;
-const serviceSid = process.env.TWILIO_SERVICE_SID;
+// Support both TWILIO_ and VITE_TWILIO_ prefixes
+const accountSid = process.env.TWILIO_ACCOUNT_SID || process.env.VITE_TWILIO_ACCOUNT_SID;
+const authToken = process.env.TWILIO_AUTH_TOKEN || process.env.VITE_TWILIO_AUTH_TOKEN;
+const serviceSid = process.env.TWILIO_SERVICE_SID || process.env.VITE_TWILIO_SERVICE_SID;
 
 // Validate Twilio configuration
 if (!accountSid || !authToken || !serviceSid) {
     console.error('❌ Twilio configuration missing:');
-    console.error('TWILIO_ACCOUNT_SID:', accountSid ? '✅ Set' : '❌ Missing');
-    console.error('TWILIO_AUTH_TOKEN:', authToken ? '✅ Set' : '❌ Missing');
-    console.error('TWILIO_SERVICE_SID:', serviceSid ? '✅ Set' : '❌ Missing');
-    console.error('Please check your .env file in the server directory');
+    console.error('TWILIO_ACCOUNT_SID or VITE_TWILIO_ACCOUNT_SID:', accountSid ? '✅ Set' : '❌ Missing');
+    console.error('TWILIO_AUTH_TOKEN or VITE_TWILIO_AUTH_TOKEN:', authToken ? '✅ Set' : '❌ Missing');
+    console.error('TWILIO_SERVICE_SID or VITE_TWILIO_SERVICE_SID:', serviceSid ? '✅ Set' : '❌ Missing');
+    console.error('Please check your .env or .env.local file in the server directory');
+    console.error('Available TWILIO vars:', Object.keys(process.env).filter(k => k.includes('TWILIO')));
 } else {
     console.log('✅ Twilio configuration loaded successfully');
     console.log('📱 Ready to send real SMS via Twilio Verify');
+    console.log('Account SID:', accountSid.substring(0, 4) + '...');
 }
 
 const client = twilio(accountSid, authToken);
