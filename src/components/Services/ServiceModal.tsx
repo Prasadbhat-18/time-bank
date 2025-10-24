@@ -108,7 +108,7 @@ export const ServiceModal: React.FC<ServiceModalProps> = ({ onClose }) => {
         }
         setUploading(false);
       }
-      await dataService.createService({
+      console.log('🚀 Creating service with data:', {
         provider_id: user.id,
         skill_id: skillId,
         title,
@@ -118,6 +118,34 @@ export const ServiceModal: React.FC<ServiceModalProps> = ({ onClose }) => {
         type,
         imageUrls,
       });
+      
+      const newService = await dataService.createService({
+        provider_id: user.id,
+        skill_id: skillId,
+        title,
+        description,
+        credits_per_hour: canSetCustomCredits ? creditsPerHour : 1.0,
+        status: 'active',
+        type,
+        imageUrls,
+      });
+      
+      console.log('✅ Service created successfully and stored locally:', newService);
+      
+      // Clear service cache immediately for instant refresh
+      try {
+        const { serviceLoader } = await import('../../services/serviceLoader');
+        serviceLoader.clearCache();
+        console.log('🔄 Service cache cleared - new service will appear instantly');
+      } catch (error) {
+        console.warn('Failed to clear service cache:', error);
+      }
+      
+      // Force immediate refresh of service list
+      window.dispatchEvent(new CustomEvent('timebank:services:refresh'));
+      window.dispatchEvent(new CustomEvent('timebank:services:created', { detail: newService }));
+      
+      console.log('🎉 Service uploaded instantly - closing modal');
       onClose();
     } catch (error) {
       setUploading(false);
@@ -132,11 +160,22 @@ export const ServiceModal: React.FC<ServiceModalProps> = ({ onClose }) => {
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="mb-4">
-          <div className="flex items-center justify-between">
-            <label className="block font-medium mb-1">Service Images (up to {MAX_IMAGES})</label>
-            <span className="text-sm text-gray-500">{imageFiles.length}/{MAX_IMAGES}</span>
-          </div>
+        <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
+          <h2 className="text-2xl font-bold text-gray-800">Post a Service</h2>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-gray-100 rounded-lg transition"
+          >
+            <X className="w-5 h-5 text-gray-600" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block font-medium">Service Images (up to {MAX_IMAGES})</label>
+              <span className="text-sm text-gray-500">{imageFiles.length}/{MAX_IMAGES}</span>
+            </div>
           <input
             type="file"
             accept="image/*"
@@ -185,18 +224,9 @@ export const ServiceModal: React.FC<ServiceModalProps> = ({ onClose }) => {
           {error && (
             <div className="mt-2 text-sm text-red-600">{error}</div>
           )}
-        </div>
-        <div className="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between">
-          <h2 className="text-2xl font-bold text-gray-800">Post a Service</h2>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-gray-100 rounded-lg transition"
-          >
-            <X className="w-5 h-5 text-gray-600" />
-          </button>
-        </div>
+          </div>
 
-                <div>
+          <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Credits per hour
                     {userLevel >= 5 && (
@@ -238,8 +268,6 @@ export const ServiceModal: React.FC<ServiceModalProps> = ({ onClose }) => {
                     </div>
                   )}
                 </div>
-
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Service Type</label>
             <div className="grid grid-cols-2 gap-4">

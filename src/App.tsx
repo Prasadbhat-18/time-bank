@@ -26,6 +26,8 @@ import { MessageCircle } from 'lucide-react';
 import { useToast } from './contexts/ToastContext';
 import { bookingNotificationService } from './services/bookingNotificationService';
 import { ComprehensiveChatView } from './components/Chat/ComprehensiveChatView';
+import { serviceLoader } from './services/serviceLoader';
+import './services/startupService'; // Initialize permanent storage
 
 type View = 'dashboard' | 'profile' | 'wallet' | 'services' | 'bookings' | 'admin' | 'chat';
 
@@ -82,6 +84,16 @@ function AppContent() {
       window.removeEventListener('timebank:switchToChat', handleSwitchToChat);
     };
   }, [user?.id]);
+
+  // Preload services for instant loading
+  useEffect(() => {
+    console.log('🚀 Preloading services for instant website performance...');
+    serviceLoader.preloadServices().then(() => {
+      console.log('✅ Services preloaded - website will load instantly!');
+    }).catch(error => {
+      console.warn('⚠️ Service preload failed, but app will still work:', error);
+    });
+  }, []);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -141,13 +153,28 @@ function AppContent() {
 
     return (
       <div className="relative min-h-screen bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 dark:bg-gray-950 dark:text-emerald-400 dark:from-gray-950 dark:via-gray-950 dark:to-gray-950 flex items-center justify-center p-4">
-        {/* Theme toggle */}
+        {/* Enhanced Theme toggle with sun/moon icons */}
         <button
           onClick={() => setDark((d) => !d)}
-          className="absolute top-4 right-4 px-3 py-1.5 rounded-lg text-sm bg-white/70 hover:bg-white dark:bg-gray-900 dark:hover:bg-gray-800 border border-gray-200 dark:border-gray-800 transition"
+          className="absolute top-4 right-4 group relative overflow-hidden bg-gradient-to-r from-amber-400 to-orange-500 dark:from-indigo-600 dark:to-purple-700 rounded-full p-3 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-110"
           title={dark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
         >
-          {dark ? 'Light' : 'Dark'} Mode
+          {/* Sun Icon */}
+          <div className={`absolute inset-0 flex items-center justify-center transition-all duration-500 ${dark ? 'opacity-0 rotate-180 scale-0' : 'opacity-100 rotate-0 scale-100'}`}>
+            <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
+            </svg>
+          </div>
+          
+          {/* Moon Icon */}
+          <div className={`absolute inset-0 flex items-center justify-center transition-all duration-500 ${dark ? 'opacity-100 rotate-0 scale-100' : 'opacity-0 -rotate-180 scale-0'}`}>
+            <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+              <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
+            </svg>
+          </div>
+          
+          {/* Animated background glow */}
+          <div className="absolute inset-0 rounded-full bg-gradient-to-r from-amber-400/20 to-orange-500/20 dark:from-indigo-600/20 dark:to-purple-700/20 animate-pulse"></div>
         </button>
         <div className="w-full max-w-6xl">
           <div className="text-center mb-6 md:mb-8">
@@ -263,13 +290,28 @@ function AppContent() {
                 );
               })}
 
-              {/* Dark mode toggle */}
+              {/* Enhanced Dark mode toggle */}
               <button
                 onClick={() => setDark((d) => !d)}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg transition text-gray-600 hover:bg-gray-50 dark:text-emerald-400 dark:hover:bg-gray-800"
+                className="group relative overflow-hidden bg-gradient-to-r from-amber-400 to-orange-500 dark:from-indigo-600 dark:to-purple-700 rounded-full p-2 shadow-md hover:shadow-lg transition-all duration-300 transform hover:scale-105"
                 title={dark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
               >
-                <span className="hidden md:inline">{dark ? 'Light' : 'Dark'} Mode</span>
+                {/* Sun Icon */}
+                <div className={`absolute inset-0 flex items-center justify-center transition-all duration-500 ${dark ? 'opacity-0 rotate-180 scale-0' : 'opacity-100 rotate-0 scale-100'}`}>
+                  <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                
+                {/* Moon Icon */}
+                <div className={`absolute inset-0 flex items-center justify-center transition-all duration-500 ${dark ? 'opacity-100 rotate-0 scale-100' : 'opacity-0 -rotate-180 scale-0'}`}>
+                  <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
+                  </svg>
+                </div>
+                
+                {/* Placeholder for proper sizing */}
+                <div className="w-4 h-4 opacity-0"></div>
               </button>
 
               <button

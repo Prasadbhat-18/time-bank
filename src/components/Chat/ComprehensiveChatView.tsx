@@ -54,13 +54,15 @@ export const ComprehensiveChatView: React.FC = () => {
   const [selectedConversation, setSelectedConversation] = useState<ChatConversation | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [users, setUsers] = useState<UserType[]>([]);
-  const [showNewChatModal, setShowNewChatModal] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [enhanceWithAI, setEnhanceWithAI] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [showNewChatModal, setShowNewChatModal] = useState(false);
+  const [availableUsers, setAvailableUsers] = useState<UserType[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
   const [showMessageSentPopup, setShowMessageSentPopup] = useState(false);
   const [lastRecipientName, setLastRecipientName] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [initialLoading, setInitialLoading] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Load conversations and users
@@ -109,7 +111,7 @@ export const ComprehensiveChatView: React.FC = () => {
       console.log('🚀 Starting chat with:', targetUserId, targetUserName);
       
       // Find the target user
-      const targetUser = users.find(u => u.id === targetUserId);
+      const targetUser = availableUsers.find(u => u.id === targetUserId);
       if (targetUser && user) {
         try {
           const conversation = await groqChatService.createConversation(user, targetUser);
@@ -131,36 +133,51 @@ export const ComprehensiveChatView: React.FC = () => {
       unsubscribe();
       window.removeEventListener('timebank:startChat', handleStartChat);
     };
-  }, [user, selectedConversation, users]);
+  }, [user, selectedConversation, availableUsers]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
   const loadConversations = () => {
-    if (user) {
-      const userConversations = groqChatService.getUserConversations(user.id);
-      setConversations(userConversations);
+    try {
+      if (user) {
+        const userConversations = groqChatService.getUserConversations(user.id);
+        setConversations(userConversations);
+        setError(null);
+      }
+    } catch (error) {
+      console.error('Failed to load conversations:', error);
+      setError('Failed to load conversations');
+    } finally {
+      setInitialLoading(false);
     }
   };
 
   const loadUsers = async () => {
     try {
       const allUsers = await dataService.getAllRawUsers();
-      setUsers(allUsers.filter((u: any) => u.id !== user?.id));
+      setAvailableUsers(allUsers.filter((u: any) => u.id !== user?.id));
+      setError(null);
     } catch (error) {
       console.error('Failed to load users:', error);
+      setError('Failed to load users');
     }
   };
 
   const loadMessages = (conversationId: string) => {
-    const conversationMessages = groqChatService.getConversationMessages(conversationId);
-    setMessages(conversationMessages);
-    
-    // Mark messages as read
-    if (user) {
-      groqChatService.markMessagesAsRead(conversationId, user.id);
-      loadConversations(); // Refresh to update unread counts
+    try {
+      const conversationMessages = groqChatService.getConversationMessages(conversationId);
+      setMessages(conversationMessages);
+      
+      // Mark messages as read
+      if (user) {
+        groqChatService.markMessagesAsRead(conversationId, user.id);
+        loadConversations(); // Refresh to update unread counts
+      }
+    } catch (error) {
+      console.error('Failed to load messages:', error);
+      setError('Failed to load messages');
     }
   };
 
@@ -168,6 +185,7 @@ export const ComprehensiveChatView: React.FC = () => {
     if (!newMessage.trim() || !selectedConversation || !user) return;
 
     setLoading(true);
+    setError(null);
     try {
       const receiverId = selectedConversation.participants.find(p => p !== user.id)!;
       const receiverName = selectedConversation.participantNames[receiverId];
@@ -191,7 +209,7 @@ export const ComprehensiveChatView: React.FC = () => {
       
     } catch (error) {
       console.error('Failed to send message:', error);
-      alert('Failed to send message. Please try again.');
+      setError('Failed to send message. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -206,8 +224,10 @@ export const ComprehensiveChatView: React.FC = () => {
       loadMessages(conversation.id);
       loadConversations();
       setShowNewChatModal(false);
+      setError(null);
     } catch (error) {
       console.error('Failed to create conversation:', error);
+      setError('Failed to create conversation');
     }
   };
 
@@ -236,7 +256,7 @@ export const ComprehensiveChatView: React.FC = () => {
     return user ? groqChatService.getTotalUnreadCount(user.id) : 0;
   };
 
-  const filteredUsers = users.filter(u => 
+  const filteredUsers = availableUsers.filter(u => 
     u.username?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     u.email.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -244,13 +264,41 @@ export const ComprehensiveChatView: React.FC = () => {
   if (!user) {
     return (
       <div className="flex items-center justify-center h-64">
-        <p className="text-gray-500">Please log in to access messages</p>
+        <p className="text-gray-500 dark:text-emerald-400/80">Please log in to access messages</p>
+      </div>
+    );
+  }
+
+  if (initialLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-500 mx-auto mb-4"></div>
+          <p className="text-gray-500 dark:text-emerald-400/80">Loading messages...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-7xl mx-auto h-[calc(100vh-120px)] bg-white rounded-xl shadow-lg overflow-hidden">
+    <div className="max-w-7xl mx-auto h-[calc(100vh-120px)] bg-white dark:dark-card rounded-xl shadow-lg overflow-hidden">
+      {/* Error Display */}
+      {error && (
+        <div className="bg-red-50 dark:bg-red-900/20 border-l-4 border-red-400 p-4 mb-4">
+          <div className="flex">
+            <div className="ml-3">
+              <p className="text-sm text-red-700 dark:text-red-400">{error}</p>
+            </div>
+            <button
+              onClick={() => setError(null)}
+              className="ml-auto text-red-400 hover:text-red-600"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+      
       <div className="flex h-full">
         {/* Conversations Sidebar */}
         <div className={`w-full md:w-1/3 border-r border-gray-200 flex flex-col ${selectedConversation ? 'hidden md:flex' : ''}`}>
@@ -285,7 +333,12 @@ export const ComprehensiveChatView: React.FC = () => {
                 <p className="text-sm">Start a new chat to begin messaging</p>
               </div>
             ) : (
-              conversations.map((conversation) => {
+              conversations
+                .filter(conversation => {
+                  const otherUserId = conversation.participants.find(p => p !== user.id);
+                  return otherUserId && conversation.participantNames?.[otherUserId];
+                })
+                .map((conversation) => {
                 const otherUserId = conversation.participants.find(p => p !== user.id)!;
                 const otherUserName = conversation.participantNames[otherUserId];
                 const unreadCount = groqChatService.getConversationMessages(conversation.id)
@@ -336,8 +389,6 @@ export const ComprehensiveChatView: React.FC = () => {
             )}
           </div>
         </div>
-
-        {/* Chat Area */}
         <div className={`flex-1 flex flex-col ${!selectedConversation ? 'hidden md:flex' : ''}`}>
           {selectedConversation ? (
             <>
@@ -346,9 +397,9 @@ export const ComprehensiveChatView: React.FC = () => {
                 <div className="flex items-center gap-3">
                   <button
                     onClick={() => setSelectedConversation(null)}
-                    className="md:hidden p-2 hover:bg-gray-100 rounded-lg"
+                    className="md:hidden p-1 hover:bg-gray-100 rounded-lg flex items-center justify-center"
                   >
-                    <ArrowLeft className="w-5 h-5" />
+                    <ArrowLeft className="w-4 h-4" />
                   </button>
                   <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center">
                     <User className="w-5 h-5 text-emerald-600" />

@@ -1,8 +1,13 @@
 import { User } from '../types';
 
 // Groq API configuration
-const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY || 'your_groq_api_key_here';
+const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY || '';
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
+
+// Check if Groq API is properly configured
+const isGroqConfigured = () => {
+  return GROQ_API_KEY && GROQ_API_KEY !== 'your_groq_api_key_here' && GROQ_API_KEY.length > 10;
+};
 
 export interface ChatMessage {
   id: string;
@@ -109,44 +114,79 @@ class GroqChatService {
     senderName: string,
     receiverName: string
   ): Promise<ChatMessage> {
-    const conversationId = this.generateConversationId(senderId, receiverId);
-    
-    const message: ChatMessage = {
-      id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      senderId,
-      receiverId,
-      content: content.trim(),
-      timestamp: new Date().toISOString(),
-      read: false,
-      senderName,
-      receiverName
-    };
+    try {
+      // Validate inputs
+      if (!senderId || !receiverId || !content.trim()) {
+        throw new Error('Invalid message parameters');
+      }
 
-    // Add message to conversation
-    if (!this.messages.has(conversationId)) {
-      this.messages.set(conversationId, []);
-    }
-    
-    this.messages.get(conversationId)!.push(message);
+      const conversationId = this.generateConversationId(senderId, receiverId);
+      
+      const message: ChatMessage = {
+        id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        senderId,
+        receiverId,
+        content: content.trim(),
+        timestamp: new Date().toISOString(),
+        read: false,
+        senderName: senderName || 'Unknown User',
+        receiverName: receiverName || 'Unknown User'
+      };
 
-    // Update conversation
-    const conversation = this.conversations.get(conversationId);
-    if (conversation) {
+      // Add message to conversation
+      if (!this.messages.has(conversationId)) {
+        this.messages.set(conversationId, []);
+      }
+      
+      this.messages.get(conversationId)!.push(message);
+
+      // Update conversation
+      let conversation = this.conversations.get(conversationId);
+      if (!conversation) {
+        // Create conversation if it doesn't exist
+        conversation = {
+          id: conversationId,
+          participants: [senderId, receiverId],
+          participantNames: {
+            [senderId]: senderName || 'Unknown User',
+            [receiverId]: receiverName || 'Unknown User'
+          },
+          unreadCount: 0,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        this.conversations.set(conversationId, conversation);
+      }
+
       conversation.lastMessage = message;
       conversation.unreadCount += 1;
       conversation.updatedAt = new Date().toISOString();
       this.conversations.set(conversationId, conversation);
+
+      // Save to storage with error handling
+      try {
+        this.saveToStorage();
+      } catch (storageError) {
+        console.warn('Failed to save to storage:', storageError);
+        // Continue anyway - message is still in memory
+      }
+
+      // Trigger notification for receiver
+      const receiverCallback = this.notificationCallbacks.get(receiverId);
+      if (receiverCallback) {
+        try {
+          receiverCallback(message);
+        } catch (callbackError) {
+          console.warn('Notification callback failed:', callbackError);
+        }
+      }
+
+      console.log('✅ Message sent successfully:', message.id);
+      return message;
+    } catch (error) {
+      console.error('❌ Failed to send message:', error);
+      throw new Error(`Failed to send message: ${error.message}`);
     }
-
-    this.saveToStorage();
-
-    // Trigger notification for receiver
-    const receiverCallback = this.notificationCallbacks.get(receiverId);
-    if (receiverCallback) {
-      receiverCallback(message);
-    }
-
-    return message;
   }
 
   // Get conversations for a user
@@ -231,13 +271,20 @@ class GroqChatService {
   ): Promise<ChatMessage> {
     let finalContent = content;
 
-    if (enhanceWithAI && content.trim()) {
+    // Only try AI enhancement if Groq is configured and user requested it
+    if (enhanceWithAI && content.trim() && isGroqConfigured()) {
       try {
+        console.log('🤖 Enhancing message with Groq AI...');
         const enhancedContent = await this.enhanceMessageWithGroq(content);
         finalContent = enhancedContent || content;
+        console.log('✅ Message enhanced successfully');
       } catch (error) {
-        console.warn('AI enhancement failed, using original message:', error);
+        console.warn('⚠️ AI enhancement failed, using original message:', error);
+        // Fallback to original message
+        finalContent = content;
       }
+    } else if (enhanceWithAI && !isGroqConfigured()) {
+      console.warn('⚠️ Groq API not configured, sending message without AI enhancement');
     }
 
     return this.sendMessage(senderId, receiverId, finalContent, senderName, receiverName);

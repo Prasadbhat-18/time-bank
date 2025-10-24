@@ -17,23 +17,30 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({ booking, onClose, onRe
   const [loading, setLoading] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
 
-  const isProvider = booking.provider_id === user?.id;
-  const reviewee = isProvider ? booking.requester : booking.provider;
+  // Only requesters can submit reviews (not providers)
+  const isRequester = booking.requester_id === user?.id;
+  const reviewee = booking.provider; // Always reviewing the provider
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     // More robust check for reviewee - fall back to IDs if user objects aren't available
-    const revieweeId = isProvider ? booking.requester_id : booking.provider_id;
+    const revieweeId = booking.provider_id;
     
     if (!user || !revieweeId) {
       console.error('Missing user or reviewee:', { 
         user: user?.id, 
         revieweeId, 
         booking: booking.id,
-        isProvider 
+        isRequester
       });
       alert('Error: Missing user information. Please try refreshing the page.');
+      return;
+    }
+    
+    // Restrict review submission to requesters only
+    if (!isRequester) {
+      alert('Only service requesters can submit reviews.');
       return;
     }
 
@@ -104,7 +111,7 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({ booking, onClose, onRe
             <h3 className="font-semibold text-gray-800 mb-1">{booking.service?.title}</h3>
             <p className="text-sm text-gray-600">
               Review for: <span className="font-medium">
-                {reviewee?.username || (isProvider ? 'Service Requester' : 'Service Provider')}
+                {reviewee?.username || 'Service Provider'}
               </span>
             </p>
           </div>

@@ -2,19 +2,353 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Dark mode base colors */
+/* Enhanced Dark mode aesthetics */
 :root.dark {
   color-scheme: dark;
 }
 
 html.dark body {
-  background-color: #0a0f0a; /* near-black with green hint */
-  color: rgb(52 211 153); /* emerald-400 */
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 25%, #334155 50%, #1e293b 75%, #0f172a 100%);
+  color: rgb(226 232 240); /* slate-200 */
+  min-height: 100vh;
+}
+
+/* Dark mode card backgrounds */
+html.dark .bg-white {
+  background-color: rgb(30 41 59 / 0.8) !important; /* slate-800 with opacity */
+  backdrop-filter: blur(8px);
+  border-color: rgb(51 65 85) !important; /* slate-700 */
+}
+
+/* Dark mode text colors */
+html.dark .text-gray-800 {
+  color: rgb(226 232 240) !important; /* slate-200 */
+}
+
+html.dark .text-gray-600 {
+  color: rgb(148 163 184) !important; /* slate-400 */
+}
+
+html.dark .text-gray-500 {
+  color: rgb(100 116 139) !important; /* slate-500 */
+}
+
+html.dark .text-gray-400 {
+  color: rgb(71 85 105) !important; /* slate-600 */
+}
+
+/* Dark mode borders and dividers */
+html.dark .border-gray-200 {
+  border-color: rgb(51 65 85) !important; /* slate-700 */
+}
+
+html.dark .border-gray-100 {
+  border-color: rgb(71 85 105) !important; /* slate-600 */
+}
+
+html.dark .border-gray-300 {
+  border-color: rgb(51 65 85) !important; /* slate-700 */
+}
+
+/* Dark mode backgrounds */
+html.dark .bg-gray-50 {
+  background-color: rgb(30 41 59) !important; /* slate-800 */
+}
+
+html.dark .bg-gray-100 {
+  background-color: rgb(51 65 85) !important; /* slate-700 */
+}
+
+html.dark .bg-emerald-50 {
+  background-color: rgb(6 78 59 / 0.3) !important; /* emerald-900 with opacity */
+}
+
+html.dark .bg-blue-50 {
+  background-color: rgb(30 58 138 / 0.3) !important; /* blue-900 with opacity */
+}
+
+html.dark .bg-red-50 {
+  background-color: rgb(127 29 29 / 0.3) !important; /* red-900 with opacity */
+}
+
+/* Dark mode hover states */
+html.dark .hover\\:bg-gray-50:hover {
+  background-color: rgb(51 65 85) !important; /* slate-700 */
+}
+
+html.dark .hover\\:bg-emerald-50:hover {
+  background-color: rgb(6 78 59 / 0.4) !important; /* emerald-900 with more opacity */
+}
+
+/* Dark mode form inputs */
+html.dark input,
+html.dark textarea,
+html.dark select {
+  background-color: rgb(30 41 59) !important; /* slate-800 */
+  border-color: rgb(51 65 85) !important; /* slate-700 */
+  color: rgb(226 232 240) !important; /* slate-200 */
+}
+
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: rgb(100 116 139) !important; /* slate-500 */
+}
+
+html.dark input:focus,
+html.dark textarea:focus,
+html.dark select:focus {
+  border-color: rgb(16 185 129) !important; /* emerald-500 */
+  box-shadow: 0 0 0 3px rgb(16 185 129 / 0.1) !important;
+}
+
+/* Dark mode button visibility fixes */
+html.dark .bg-red-100 {
+  background-color: rgb(127 29 29 / 0.4) !important; /* red-900 with opacity */
+}
+
+html.dark .text-red-600 {
+  color: rgb(248 113 113) !important; /* red-400 */
+}
+
+html.dark .border-red-200 {
+  border-color: rgb(185 28 28) !important; /* red-700 */
+}
+
+html.dark .bg-gray-200 {
+  background-color: rgb(51 65 85) !important; /* slate-700 */
+}
+
+html.dark .bg-emerald-100 {
+  background-color: rgb(6 78 59 / 0.4) !important; /* emerald-900 with opacity */
+}
+
+html.dark .text-emerald-700 {
+  color: rgb(52 211 153) !important; /* emerald-400 */
+}
+
+html.dark .text-blue-700 {
+  color: rgb(96 165 250) !important; /* blue-400 */
+}
+
+/* Dark mode modal and overlay fixes */
+html.dark .bg-black\/50 {
+  background-color: rgb(0 0 0 / 0.8) !important;
+}
+
+html.dark .bg-white {
+  background-color: rgb(30 41 59) !important; /* slate-800 */
+  border-color: rgb(51 65 85) !important; /* slate-700 */
+}
+
+/* Button visibility improvements */
+html.dark button {
+  border-color: rgb(51 65 85) !important; /* slate-700 */
+}
+
+html.dark .hover\\:bg-red-50:hover {
+  background-color: rgb(127 29 29 / 0.3) !important;
+}
+
+/* Dark mode message and chat visibility fixes */
+html.dark .text-gray-900 {
+  color: rgb(226 232 240) !important; /* slate-200 */
+}
+
+html.dark .text-gray-700 {
+  color: rgb(203 213 225) !important; /* slate-300 */
+}
+
+html.dark .text-gray-300 {
+  color: rgb(148 163 184) !important; /* slate-400 */
+}
+
+html.dark .bg-gray-800 {
+  background-color: rgb(30 41 59) !important; /* slate-800 */
+}
+
+html.dark .bg-gray-900 {
+  background-color: rgb(15 23 42) !important; /* slate-900 */
+}
+
+/* Message bubble specific fixes */
+html.dark .bg-white {
+  background-color: rgb(30 41 59) !important; /* slate-800 */
+  color: rgb(226 232 240) !important; /* slate-200 */
+}
+
+html.dark .border-gray-200 {
+  border-color: rgb(51 65 85) !important; /* slate-700 */
+}
+
+html.dark .border-gray-300 {
+  border-color: rgb(71 85 105) !important; /* slate-600 */
+}
+
+/* Chat input and message area fixes */
+html.dark .bg-gray-50 {
+  background-color: rgb(30 41 59) !important; /* slate-800 */
+}
+
+html.dark .placeholder\\:text-gray-400::placeholder {
+  color: rgb(100 116 139) !important; /* slate-500 */
+}
+
+/* Ensure all text is visible in dark mode */
+html.dark * {
+  border-color: rgb(51 65 85) !important; /* slate-700 for all borders */
+}
+
+html.dark .text-black {
+  color: rgb(226 232 240) !important; /* slate-200 */
+}
+
+html.dark .bg-gray-100 {
+  background-color: rgb(51 65 85) !important; /* slate-700 */
+}
+
+/* Service card dark mode fixes */
+html.dark .shadow-md {
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.3), 0 2px 4px -2px rgb(0 0 0 / 0.3) !important;
+}
+
+html.dark .hover\\:shadow-lg:hover {
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.4), 0 4px 6px -4px rgb(0 0 0 / 0.4) !important;
+}
+
+html.dark .text-gray-800 {
+  color: rgb(226 232 240) !important; /* slate-200 */
+}
+
+html.dark .text-gray-600 {
+  color: rgb(148 163 184) !important; /* slate-400 */
+}
+
+html.dark .text-gray-500 {
+  color: rgb(100 116 139) !important; /* slate-500 */
+}
+
+/* Enhanced service card responsive design */
+@media (max-width: 768px) {
+  .service-grid {
+    gap: 1.5rem !important; /* 6 on mobile */
+  }
+  
+  .service-card {
+    min-height: 280px;
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1024px) {
+  .service-grid {
+    gap: 2rem !important; /* 8 on tablet */
+  }
+  
+  .service-card {
+    min-height: 320px;
+  }
+}
+
+@media (min-width: 1025px) {
+  .service-grid {
+    gap: 2rem !important; /* 8 on desktop */
+  }
+  
+  .service-card {
+    min-height: 340px;
+  }
+}
+
+/* Dark mode scrollbar styling */
+html.dark ::-webkit-scrollbar {
+  width: 8px;
+}
+
+html.dark ::-webkit-scrollbar-track {
+  background: #161b22;
+  border-radius: 4px;
+}
+
+html.dark ::-webkit-scrollbar-thumb {
+  background: linear-gradient(135deg, #34d399, #10b981);
+  border-radius: 4px;
+}
+
+html.dark ::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(135deg, #10b981, #059669);
+}
+
+/* Dark mode selection styling */
+html.dark ::selection {
+  background: rgba(52, 211, 153, 0.3);
+  color: rgb(52 211 153);
+}
+
+/* Enhanced dark mode card shadows */
+html.dark .shadow-lg {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.2);
+}
+
+html.dark .shadow-xl {
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.4), 0 10px 10px -5px rgba(0, 0, 0, 0.3);
+}
+
+/* Dark mode glow effects */
+html.dark .glow-emerald {
+  box-shadow: 0 0 20px rgba(52, 211, 153, 0.3);
+}
+
+html.dark .glow-emerald-strong {
+  box-shadow: 0 0 30px rgba(52, 211, 153, 0.5);
+}
+
+/* Dark mode button hover effects */
+html.dark .btn-dark-hover:hover {
+  background: linear-gradient(135deg, rgba(52, 211, 153, 0.1), rgba(16, 185, 129, 0.1));
+  border-color: rgba(52, 211, 153, 0.3);
+  transform: translateY(-1px);
+  transition: all 0.3s ease;
+}
+
+/* Dark mode text gradients */
+.text-gradient-dark {
+  background: linear-gradient(135deg, #34d399, #10b981, #059669);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Dark mode animated borders */
+@keyframes border-glow {
+  0%, 100% { border-color: rgba(52, 211, 153, 0.3); }
+  50% { border-color: rgba(52, 211, 153, 0.6); }
+}
+
+html.dark .animate-border-glow {
+  animation: border-glow 2s ease-in-out infinite;
+}
+
+/* Dark mode backdrop blur enhancement */
+html.dark .backdrop-blur-dark {
+  backdrop-filter: blur(16px) saturate(180%);
+  background: rgba(13, 17, 23, 0.8);
 }
 
 @layer utilities {
   .perspective-1000 {
     perspective: 1000px;
+  }
+
+  /* Dark mode utility classes */
+  .dark-card {
+    @apply bg-gray-900/60 border border-gray-800 backdrop-blur-sm;
+  }
+
+  .dark-input {
+    @apply bg-gray-900/50 border-gray-700 text-emerald-400 placeholder-emerald-400/50;
+  }
+
+  .dark-button {
+    @apply bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg hover:shadow-emerald-500/25;
   }
 
   @keyframes gradient {

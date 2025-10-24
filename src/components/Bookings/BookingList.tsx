@@ -149,27 +149,27 @@ export const BookingList: React.FC = () => {
       
       // CRITICAL: Re-fetch the updated user data from dataService
       // This ensures we get the latest XP/level after updateBooking modified it
-      if (booking.provider_id === user.id && updateUser) {
+      if (updateUser) {
         try {
-          console.log('🔄 Re-fetching updated user data...');
-          const updatedProvider = await dataService.getUserById(user.id);
+          console.log('🔄 Re-fetching updated user data for current user...');
+          const updatedCurrentUser = await dataService.getUserById(user.id);
           
-          if (updatedProvider) {
+          if (updatedCurrentUser) {
             console.log('📊 Fetched updated user:', {
-              level: updatedProvider.level,
-              xp: updatedProvider.experience_points,
-              services: updatedProvider.services_completed,
-              customCreditsEnabled: updatedProvider.custom_credits_enabled
+              level: updatedCurrentUser.level,
+              xp: updatedCurrentUser.experience_points,
+              services: updatedCurrentUser.services_completed,
+              customCreditsEnabled: updatedCurrentUser.custom_credits_enabled
             });
             
             // Calculate ACTUAL XP gained from the difference
-            const actualXPGained = (updatedProvider.experience_points || 0) - previousXP;
-            const actualLevelGained = (updatedProvider.level || 1) > previousLevel;
+            const actualXPGained = (updatedCurrentUser.experience_points || 0) - previousXP;
+            const actualLevelGained = (updatedCurrentUser.level || 1) > previousLevel;
             
             console.log('📈 Actual gains:', {
               xpGained: actualXPGained,
               leveledUp: actualLevelGained,
-              newLevel: updatedProvider.level,
+              newLevel: updatedCurrentUser.level,
               previousLevel: previousLevel
             });
             
@@ -177,48 +177,62 @@ export const BookingList: React.FC = () => {
             const baseCredits = booking.service?.credits_per_hour
               ? (booking.duration_hours || 1) * (booking.service.credits_per_hour || 1)
               : (booking.duration_hours || 1);
-            const levelUpBonus = actualLevelGained ? getLevelUpBonusCredits(updatedProvider.level || previousLevel) : 0;
+            const levelUpBonus = actualLevelGained ? getLevelUpBonusCredits(updatedCurrentUser.level || previousLevel) : 0;
             
             // Show celebration modal with ACTUAL earned rewards
             setCompletionData({
               xpEarned: actualXPGained,
               creditsEarned: baseCredits + levelUpBonus,
-              newLevel: updatedProvider.level || previousLevel,
+              newLevel: updatedCurrentUser.level || previousLevel,
               previousLevel,
-              totalServicesCompleted: updatedProvider.services_completed || previousServices,
+              totalServicesCompleted: updatedCurrentUser.services_completed || previousServices,
               rating: 5,
               bonusInfo: { highRatingBonus: actualXPGained > 50 ? 20 : 0, consecutiveBonus: 0, perfectWeekBonus: 0 },
             });
             setShowCelebration(true);
             
-            // Update AuthContext with the fresh data
+            // Update AuthContext with the fresh data - ALWAYS update for current user
+            console.log('🔄 Updating AuthContext with fresh user data...');
             await updateUser({
-              level: updatedProvider.level,
-              experience_points: updatedProvider.experience_points,
-              services_completed: updatedProvider.services_completed,
-              custom_credits_enabled: updatedProvider.custom_credits_enabled,
+              level: updatedCurrentUser.level,
+              experience_points: updatedCurrentUser.experience_points,
+              services_completed: updatedCurrentUser.services_completed,
+              custom_credits_enabled: updatedCurrentUser.custom_credits_enabled,
             });
             
             console.log('✅ AuthContext updated with fresh user data');
             
             // Give the state updates a moment to propagate
-            await new Promise(resolve => setTimeout(resolve, 200));
+            await new Promise(resolve => setTimeout(resolve, 300));
             
             // Show XP gain toast notification with ACTUAL values
             setXpToastData({
               xpGained: actualXPGained,
-              newLevel: actualLevelGained ? updatedProvider.level : undefined
+              newLevel: actualLevelGained ? updatedCurrentUser.level : undefined
             });
             setShowXPToast(true);
             
-            // Now trigger UI refresh
+            // Now trigger UI refresh for ALL components
             console.log('📡 Dispatching refresh event for UI components');
             window.dispatchEvent(new CustomEvent('timebank:refreshProfileAndDashboard', {
               detail: { 
-                user: updatedProvider,
+                user: updatedCurrentUser,
                 timestamp: Date.now()
               }
             }));
+            
+            // Also dispatch level up event if level changed
+            if (actualLevelGained) {
+              console.log('🎉 Dispatching level up event');
+              window.dispatchEvent(new CustomEvent('timebank:levelUp', {
+                detail: {
+                  userId: user.id,
+                  newLevel: updatedCurrentUser.level,
+                  previousLevel,
+                  xpGained: actualXPGained
+                }
+              }));
+            }
           } else {
             console.warn('⚠️ getUserById returned null');
           }

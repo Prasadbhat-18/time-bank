@@ -1,14 +1,20 @@
 import React, { useEffect, useState } from 'react';
 import { dataService } from '../../services/dataService';
 import { useAuth } from '../../contexts/AuthContext';
+import { User } from '../../types';
+import { Shield, Users, Briefcase, Calendar, Trash2, Ban, CheckCircle, RefreshCw, AlertTriangle, Crown } from 'lucide-react';
 
 export const AdminPanel: React.FC = () => {
   const { user } = useAuth();
   const [services, setServices] = useState<any[]>([]);
   const [bookings, setBookings] = useState<any[]>([]);
-  const [users, setUsers] = useState<any[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
   // loading state omitted (could be reintroduced for async indicators)
   const [error, setError] = useState('');
+  const [blockingUser, setBlockingUser] = useState<string | null>(null);
+  const [blockReason, setBlockReason] = useState('');
+  const [deletingService, setDeletingService] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
   const loadAll = async () => {
     try {
@@ -25,6 +31,76 @@ export const AdminPanel: React.FC = () => {
     } 
   };
 
+  const handleBlockUser = async (userId: string) => {
+    if (!user || !blockReason.trim()) return;
+    
+    try {
+      await dataService.blockUser(userId, blockReason, user.id);
+      setBlockingUser(null);
+      setBlockReason('');
+      loadAll();
+      setError('');
+    } catch (err: any) {
+      setError(err.message || 'Failed to block user');
+    }
+  };
+
+  const handleUnblockUser = async (userId: string) => {
+    if (!user) return;
+    
+    try {
+      await dataService.unblockUser(userId, user.id);
+      loadAll();
+      setError('');
+    } catch (err: any) {
+      setError(err.message || 'Failed to unblock user');
+    }
+  };
+
+  const handleDeleteService = async (serviceId: string) => {
+    if (!user || user.id !== 'official-account') {
+      setError('Only admin can delete services');
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      console.log('🔐 Admin deleting service:', serviceId);
+      
+      // Admin has full authority to delete any service
+      const allServices = await dataService.getAllRawServices();
+      const serviceToDelete = allServices.find((s: any) => s.id === serviceId);
+      
+      if (!serviceToDelete) {
+        throw new Error('Service not found');
+      }
+      
+      // Delete from all storage locations
+      const services = await dataService.getAllRawServices();
+      const updated = services.filter((s: any) => s.id !== serviceId);
+      localStorage.setItem('timebank_services', JSON.stringify(updated));
+      
+      // Also delete from permanent storage
+      try {
+        const permanentServices = JSON.parse(localStorage.getItem('timebank_services_permanent') || '[]');
+        const permanentUpdated = permanentServices.filter((s: any) => s.id !== serviceId);
+        localStorage.setItem('timebank_services_permanent', JSON.stringify(permanentUpdated));
+      } catch (e) {
+        console.warn('Could not update permanent storage');
+      }
+      
+      console.log('✅ Service deleted by admin:', serviceId);
+      setDeletingService(null);
+      loadAll();
+      setError('');
+    } catch (err: any) {
+      console.error('❌ Failed to delete service:', err);
+      setError(err.message || 'Failed to delete service');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => { loadAll(); }, []);
 
   if (!user || user.id !== 'official-account') {
@@ -37,42 +113,150 @@ export const AdminPanel: React.FC = () => {
   }
 
   return (
-    <div className="max-w-7xl mx-auto p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-semibold">Admin Panel</h2>
-        <div>
-          <button onClick={loadAll} className="px-4 py-2 bg-blue-600 text-white rounded">Refresh</button>
+    <div className="max-w-7xl mx-auto p-6 space-y-8">
+      {/* Enhanced Admin Header */}
+      <div className="bg-gradient-to-r from-purple-600 to-indigo-600 dark:from-purple-800 dark:to-indigo-800 rounded-2xl p-8 text-white shadow-xl glow-emerald">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-white/20 rounded-xl backdrop-blur-sm">
+              <Crown className="w-8 h-8" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold">Admin Dashboard</h1>
+              <p className="text-purple-100 dark:text-purple-200">Complete system management and oversight</p>
+            </div>
+          </div>
+          <button 
+            onClick={loadAll} 
+            disabled={loading}
+            className="flex items-center gap-2 px-6 py-3 bg-white/20 hover:bg-white/30 rounded-xl backdrop-blur-sm transition-all duration-300 transform hover:scale-105 disabled:opacity-50"
+          >
+            <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
+            <span className="font-medium">Refresh Data</span>
+          </button>
         </div>
       </div>
 
-      {error && <div className="p-3 bg-red-50 text-red-700 rounded">{error}</div>}
-
-      <section className="bg-white p-4 rounded shadow">
-        <h3 className="font-semibold mb-2">Services ({services.length})</h3>
-        <div className="overflow-x-auto">
-          <table className="w-full table-auto text-sm">
-            <thead>
-              <tr className="text-left">
-                <th className="p-2">ID</th>
-                <th className="p-2">Title</th>
-                <th className="p-2">Provider</th>
-                <th className="p-2">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {services.map(s => (
-                <tr key={s.id} className="border-t">
-                  <td className="p-2">{s.id}</td>
-                  <td className="p-2">{s.title}</td>
-                  <td className="p-2">{s.provider_id}</td>
-                  <td className="p-2">
-                    <button className="px-2 py-1 bg-red-500 text-white rounded" onClick={async () => { await dataService.deleteService(s.id); loadAll(); }}>Delete</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {/* Stats Overview */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-white dark:dark-card rounded-xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-xl">
+              <Briefcase className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+            </div>
+            <div>
+              <h3 className="text-2xl font-bold text-gray-800 dark:text-emerald-400">{services.length}</h3>
+              <p className="text-gray-600 dark:text-emerald-400/80">Total Services</p>
+            </div>
+          </div>
         </div>
+
+        <div className="bg-white dark:dark-card rounded-xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-green-100 dark:bg-green-900/30 rounded-xl">
+              <Calendar className="w-6 h-6 text-green-600 dark:text-green-400" />
+            </div>
+            <div>
+              <h3 className="text-2xl font-bold text-gray-800 dark:text-emerald-400">{bookings.length}</h3>
+              <p className="text-gray-600 dark:text-emerald-400/80">Total Bookings</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white dark:dark-card rounded-xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-purple-100 dark:bg-purple-900/30 rounded-xl">
+              <Users className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+            </div>
+            <div>
+              <h3 className="text-2xl font-bold text-gray-800 dark:text-emerald-400">{users.length}</h3>
+              <p className="text-gray-600 dark:text-emerald-400/80">Total Users</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {error && (
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4 flex items-center gap-3">
+          <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400" />
+          <p className="text-red-700 dark:text-red-400">{error}</p>
+        </div>
+      )}
+
+      {/* Enhanced Services Section */}
+      <section className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-2xl shadow-2xl p-8 border-2 border-blue-200 dark:border-blue-800/50">
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-blue-500/20 rounded-xl">
+              <Briefcase className="w-7 h-7 text-blue-600 dark:text-blue-400" />
+            </div>
+            <div>
+              <h2 className="text-3xl font-bold text-gray-900 dark:text-white">Services Management</h2>
+              <p className="text-blue-600 dark:text-blue-400 text-sm mt-1">Total: {services.length} services</p>
+            </div>
+          </div>
+          <div className="px-4 py-2 bg-blue-500 text-white rounded-lg font-bold text-lg">
+            {services.length}
+          </div>
+        </div>
+        {services.length === 0 ? (
+          <div className="text-center py-12">
+            <Briefcase className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+            <p className="text-gray-500 dark:text-gray-400 text-lg">No services found</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b-2 border-blue-300 dark:border-blue-700 bg-blue-100/50 dark:bg-blue-900/30">
+                  <th className="text-left py-4 px-6 font-bold text-gray-800 dark:text-blue-300">Service Title</th>
+                  <th className="text-left py-4 px-6 font-bold text-gray-800 dark:text-blue-300">Provider</th>
+                  <th className="text-left py-4 px-6 font-bold text-gray-800 dark:text-blue-300">Type</th>
+                  <th className="text-left py-4 px-6 font-bold text-gray-800 dark:text-blue-300">Credits</th>
+                  <th className="text-left py-4 px-6 font-bold text-gray-800 dark:text-blue-300">Admin Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {services.map(s => (
+                  <tr key={s.id} className="border-b border-blue-100 dark:border-blue-800/30 hover:bg-blue-100/50 dark:hover:bg-blue-900/20 transition-all duration-200">
+                    <td className="py-5 px-6">
+                      <div>
+                        <p className="font-semibold text-gray-900 dark:text-white text-base">{s.title}</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">ID: {s.id}</p>
+                      </div>
+                    </td>
+                    <td className="py-5 px-6">
+                      <p className="text-gray-700 dark:text-gray-300 font-medium">{s.provider_id}</p>
+                    </td>
+                    <td className="py-5 px-6">
+                      <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                        s.type === 'offer' 
+                          ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-400' 
+                          : 'bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-400'
+                      }`}>
+                        {s.type === 'offer' ? '✅ Offer' : '❓ Request'}
+                      </span>
+                    </td>
+                    <td className="py-5 px-6">
+                      <span className="px-3 py-1 bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-400 rounded-full text-sm font-bold">
+                        {s.credits_per_hour || 1} cr/hr
+                      </span>
+                    </td>
+                    <td className="py-5 px-6">
+                      <button 
+                        onClick={() => setDeletingService(s.id)}
+                        className="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-700 text-white rounded-lg transition-all duration-300 transform hover:scale-105 shadow-lg hover:shadow-xl font-semibold"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        <span className="text-sm">Delete Service</span>
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
 
       <section className="bg-white p-4 rounded shadow">
@@ -115,20 +299,142 @@ export const AdminPanel: React.FC = () => {
                 <th className="p-2">ID</th>
                 <th className="p-2">Email</th>
                 <th className="p-2">Username</th>
+                <th className="p-2">Status</th>
+                <th className="p-2">Actions</th>
               </tr>
             </thead>
             <tbody>
               {users.map(u => (
-                <tr key={u.id} className="border-t">
+                <tr key={u.id} className={`border-t ${u.is_blocked ? 'bg-red-50' : ''}`}>
                   <td className="p-2">{u.id}</td>
                   <td className="p-2">{u.email}</td>
                   <td className="p-2">{u.username}</td>
+                  <td className="p-2">
+                    {u.is_blocked ? (
+                      <span className="px-2 py-1 bg-red-100 text-red-800 rounded text-xs">
+                        Blocked
+                      </span>
+                    ) : (
+                      <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs">
+                        Active
+                      </span>
+                    )}
+                  </td>
+                  <td className="p-2">
+                    {u.id !== 'official-account' && (
+                      <>
+                        {u.is_blocked ? (
+                          <button 
+                            className="px-2 py-1 bg-green-500 text-white rounded text-xs"
+                            onClick={() => handleUnblockUser(u.id)}
+                          >
+                            Unblock
+                          </button>
+                        ) : (
+                          <button 
+                            className="px-2 py-1 bg-red-500 text-white rounded text-xs"
+                            onClick={() => setBlockingUser(u.id)}
+                          >
+                            Block
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       </section>
+
+      {/* Block User Modal */}
+      {blockingUser && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold mb-4">Block User</h3>
+            <p className="text-gray-600 mb-4">
+              Are you sure you want to block this user? They will not be able to log in or use the platform.
+            </p>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Reason for blocking (required):
+              </label>
+              <textarea
+                value={blockReason}
+                onChange={(e) => setBlockReason(e.target.value)}
+                className="w-full p-2 border border-gray-300 rounded-md"
+                rows={3}
+                placeholder="Enter reason for blocking this user..."
+              />
+            </div>
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => {
+                  setBlockingUser(null);
+                  setBlockReason('');
+                }}
+                className="px-4 py-2 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleBlockUser(blockingUser)}
+                disabled={!blockReason.trim()}
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Block User
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Service Deletion Confirmation Modal */}
+      {deletingService && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl max-w-md w-full mx-4 shadow-2xl">
+            <div className="p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-xl">
+                  <Trash2 className="w-6 h-6 text-red-600 dark:text-red-400" />
+                </div>
+                <h3 className="text-xl font-bold text-gray-900 dark:text-emerald-400">Delete Service</h3>
+              </div>
+              
+              <p className="text-gray-600 dark:text-emerald-400/80 mb-6">
+                Are you sure you want to delete this service? This action cannot be undone and will remove the service permanently from the platform.
+              </p>
+              
+              <div className="flex justify-end space-x-3">
+                <button
+                  onClick={() => setDeletingService(null)}
+                  className="px-4 py-2 text-gray-600 dark:text-emerald-400 border border-gray-300 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleDeleteService(deletingService)}
+                  disabled={loading}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  {loading ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Deleting...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-4 h-4" />
+                      Delete Service
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

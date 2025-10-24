@@ -35,34 +35,64 @@ export const BookingModal: React.FC<BookingModalProps> = ({ service, onClose, on
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) return;
+    console.log('🔄 Booking form submitted');
+    
+    if (!user) {
+      console.error('❌ No user found');
+      setError('Please log in to book a service');
+      return;
+    }
+
+    if (!date || !startTime) {
+      setError('Please select both date and time');
+      return;
+    }
+
+    if (duration < 0.5) {
+      setError('Duration must be at least 30 minutes');
+      return;
+    }
 
     setError('');
     setLoading(true);
+    console.log('📋 Booking details:', { date, startTime, duration, serviceId: service.id });
 
     try {
       const scheduledStart = new Date(`${date}T${startTime}`);
       const scheduledEnd = new Date(scheduledStart.getTime() + duration * 60 * 60 * 1000);
 
-      await dataService.createBooking({
+      console.log('📅 Scheduled times:', {
+        start: scheduledStart.toISOString(),
+        end: scheduledEnd.toISOString()
+      });
+
+      const bookingData = {
         service_id: service.id,
         provider_id: service.provider_id,
         requester_id: user.id,
         scheduled_start: scheduledStart.toISOString(),
         scheduled_end: scheduledEnd.toISOString(),
         duration_hours: duration,
-        confirmation_status: 'pending'
-      });
+        confirmation_status: 'pending' as const
+      };
 
-      // Only show the limit warning if this booking puts the user over the limit (i.e., after booking, canRequestService returns false)
+      console.log('💾 Creating booking with data:', bookingData);
+      const newBooking = await dataService.createBooking(bookingData);
+      console.log('✅ Booking created successfully:', newBooking);
+
+      // Only show the limit warning if this booking puts the user over the limit
       const newServicesRequested = servicesRequested + 1;
       const isBarred = !canRequestService(servicesCompleted, newServicesRequested);
+      
       if (isBarred) {
+        console.log('⚠️ User reached service limit, showing warning');
         setShowLimitWarning(true);
       } else {
+        console.log('🎉 Booking completed successfully');
         onBooked();
       }
     } catch (err: any) {
+      console.error('❌ Booking failed:', err);
       setError(err.message || 'Failed to create booking. Please try again.');
     } finally {
       setLoading(false);

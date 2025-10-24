@@ -27,7 +27,7 @@ import {
 } from 'firebase/firestore';
 import { User } from '../types';
 import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
-import { twilioAuthService } from './twilioAuthService';
+import { twilioService } from './twilioService';
 
 function mapFirebaseUserToUser(uid: string, data: Record<string, unknown>): User {
   return {
@@ -37,6 +37,9 @@ function mapFirebaseUserToUser(uid: string, data: Record<string, unknown>): User
     bio: (data.bio as string) || '',
     avatar_url: (data.avatar_url as string) || '',
     phone: (data.phone as string) || '',
+    location: (data.location as string) || '',
+    skills: (data.skills as string[]) || [],
+    emergency_contacts: (data.emergency_contacts as any[]) || [],
     reputation_score: (data.reputation_score as number) ?? 5.0,
     total_reviews: (data.total_reviews as number) ?? 0,
     created_at: (data.created_at as string) || new Date().toISOString(),
@@ -46,6 +49,14 @@ function mapFirebaseUserToUser(uid: string, data: Record<string, unknown>): User
     services_completed: (data.services_completed as number) ?? 0,
     services_requested: (data.services_requested as number) ?? 0,
     custom_credits_enabled: (data.custom_credits_enabled as boolean) ?? false,
+    // Admin moderation fields
+    is_blocked: (data.is_blocked as boolean) ?? false,
+    blocked_at: (data.blocked_at as string) || '',
+    blocked_reason: (data.blocked_reason as string) || '',
+    blocked_by: (data.blocked_by as string) || '',
+    // Authentication provider fields
+    auth_provider: (data.auth_provider as string) || '',
+    google_profile_complete: (data.google_profile_complete as boolean) ?? false,
   } as User;
 }
 
@@ -54,7 +65,8 @@ function mapFirebaseUserToUser(uid: string, data: Record<string, unknown>): User
 class FirebaseService {
   async sendPhoneVerificationCode(phoneNumber: string): Promise<boolean> {
     try {
-      return await twilioAuthService.sendVerificationCode(phoneNumber);
+      await twilioService.sendOTP(phoneNumber);
+      return true;
     } catch (error) {
       console.error('Error sending verification code:', error);
       throw error;
@@ -63,7 +75,8 @@ class FirebaseService {
 
   async verifyPhoneCode(phoneNumber: string, code: string): Promise<User> {
     try {
-      const isVerified = await twilioAuthService.verifyCode(phoneNumber, code);
+      const response = await twilioService.verifyOTP(phoneNumber, code);
+      const isVerified = response.valid;
       if (isVerified) {
         // Create an anonymous user and link the phone
         const userCredential = await signInAnonymously(auth);
@@ -219,71 +232,138 @@ class FirebaseService {
       const cred = await signInWithPopup(auth, provider);
       const fbUser = cred.user;
       const uid = fbUser.uid;
+      
+      console.log('🔵 Google login initiated for UID:', uid);
+      
       // Try to fetch user doc from Firestore, create if missing
       try {
         const userDoc = await getDoc(doc(db, 'users', uid));
+        
         if (userDoc.exists()) {
           const userData = userDoc.data();
+          console.log('👤 Existing Google user found:', userData);
           
-          // Check if existing Google user needs migration (missing level fields)
-          const needsMigration = 
-            userData.services_requested === undefined ||
-            userData.level === undefined ||
-            userData.experience_points === undefined ||
-            userData.services_completed === undefined;
-            
-          if (needsMigration) {
-            console.log('🔄 Migrating existing Google user:', uid);
-            const migrationData = {
-              level: userData.level ?? 1,
-              experience_points: userData.experience_points ?? 0,
-              services_completed: userData.services_completed ?? 0,
-              services_requested: userData.services_requested ?? 0,
-              custom_credits_enabled: userData.custom_credits_enabled ?? false,
-              avatar_url: userData.avatar_url || fbUser.photoURL || '',
-              phone: userData.phone || fbUser.phoneNumber || '',
-            };
-            
-            await updateDoc(doc(db, 'users', uid), migrationData);
-            console.log('✅ Google user migration completed');
-            
-            // Return updated user data
-            return mapFirebaseUserToUser(uid, { ...userData, ...migrationData });
+          // Always ensure Google user has complete profile structure and fresh Google data
+          const googleProfile = cred.user.providerData?.[0];
+          const displayName = fbUser.displayName || googleProfile?.displayName || '';
+          const photoURL = fbUser.photoURL || googleProfile?.photoURL || '';
+          const phoneNumber = fbUser.phoneNumber || googleProfile?.phoneNumber || '';
+          
+          // Generate better username if current one is basic
+          let updatedUsername = userData.username;
+          if (!updatedUsername || updatedUsername.startsWith('user_') || updatedUsername === (fbUser.email || '').split('@')[0]) {
+            if (displayName) {
+              updatedUsername = displayName.replace(/[^a-zA-Z0-9_]/g, '').toLowerCase();
+            } else if (fbUser.email) {
+              updatedUsername = fbUser.email.split('@')[0];
+            }
           }
           
-          return mapFirebaseUserToUser(uid, userData);
+          // Auto-update bio if it's empty and we have display name
+          let updatedBio = userData.bio || '';
+          if (!updatedBio && displayName) {
+            updatedBio = `Hello! I'm ${displayName.split(' ')[0]}.`;
+          }
+          
+          const requiredFields = {
+            level: userData.level ?? 1,
+            experience_points: userData.experience_points ?? 0,
+            services_completed: userData.services_completed ?? 0,
+            services_requested: userData.services_requested ?? 0,
+            custom_credits_enabled: userData.custom_credits_enabled ?? false,
+            avatar_url: photoURL || userData.avatar_url || '', // Always use latest Google photo
+            phone: phoneNumber || userData.phone || '', // Always use latest Google phone
+            username: updatedUsername,
+            bio: updatedBio,
+            reputation_score: userData.reputation_score ?? 5.0,
+            total_reviews: userData.total_reviews ?? 0,
+            auth_provider: 'google',
+            google_profile_complete: true,
+            updated_at: serverTimestamp()
+          };
+          
+          // Check if any required fields are missing or Google profile data needs updating
+          const needsUpdate = Object.keys(requiredFields).some(key => 
+            userData[key] === undefined || userData[key] === null
+          ) || 
+          // Always update Google profile data to keep it fresh
+          userData.avatar_url !== photoURL || 
+          userData.phone !== phoneNumber ||
+          userData.username !== updatedUsername ||
+          userData.bio !== updatedBio ||
+          !userData.google_profile_complete;
+          
+          if (needsUpdate) {
+            console.log('🔄 Updating Google user profile with latest data');
+            await updateDoc(doc(db, 'users', uid), requiredFields);
+            console.log('✅ Google user profile updated with fresh data');
+          }
+          
+          // Return complete user data
+          return mapFirebaseUserToUser(uid, { ...userData, ...requiredFields });
         }
       } catch (error: any) {
+        console.error('❌ Error fetching Google user:', error);
         if (error.code === 'permission-denied' || /permission/i.test(error.message || '')) {
-          throw new Error('Firestore permission error while fetching Google user: check your Firestore rules (Missing or insufficient permissions)');
+          throw new Error('Firestore permission error while fetching Google user: check your Firestore rules');
         }
       }
 
-      // If user doc doesn't exist, create a complete user record
-      const data = {
+      // Create new Google user with complete profile
+      console.log('👤 Creating new Google user profile');
+      
+      // Extract additional profile information from Google
+      const googleProfile = cred.user.providerData?.[0];
+      const displayName = fbUser.displayName || googleProfile?.displayName || '';
+      const photoURL = fbUser.photoURL || googleProfile?.photoURL || '';
+      const phoneNumber = fbUser.phoneNumber || googleProfile?.phoneNumber || '';
+      
+      // Generate a more comprehensive username from Google data
+      let username = '';
+      if (displayName) {
+        username = displayName.replace(/[^a-zA-Z0-9_]/g, '').toLowerCase();
+      } else if (fbUser.email) {
+        username = fbUser.email.split('@')[0];
+      } else {
+        username = `user_${fbUser.uid.slice(0, 6)}`;
+      }
+      
+      // Auto-generate bio from Google display name if available
+      const autoBio = displayName ? `Hello! I'm ${displayName.split(' ')[0]}.` : '';
+      
+      const newUserData = {
         email: fbUser.email || '',
-        username: fbUser.displayName || (fbUser.email || '').split('@')[0],
-        bio: '',
-        avatar_url: fbUser.photoURL || '',
-        phone: fbUser.phoneNumber || '',
+        username: username,
+        bio: autoBio,
+        avatar_url: photoURL,
+        phone: phoneNumber,
         reputation_score: 5.0,
         total_reviews: 0,
         created_at: new Date().toISOString(),
-        // Level system fields - essential for XP and progression
+        updated_at: serverTimestamp(),
+        // XP and Level system - critical for functionality
         level: 1,
         experience_points: 0,
         services_completed: 0,
         services_requested: 0,
         custom_credits_enabled: false,
+        // Mark as Google user for future reference
+        auth_provider: 'google',
+        google_profile_complete: true,
       };
+      
       try {
-        await setDoc(doc(db, 'users', uid), data);
+        await setDoc(doc(db, 'users', uid), newUserData, { merge: true });
+        console.log('✅ New Google user created successfully');
       } catch (error: any) {
+        console.error('❌ Error creating Google user:', error);
         if (error.code === 'permission-denied' || /permission/i.test(error.message || '')) {
-          throw new Error('Firestore permission error while creating Google user: check your Firestore rules (Missing or insufficient permissions)');
+          throw new Error('Firestore permission error while creating Google user: check your Firestore rules');
         }
+        throw error;
       }
-      return mapFirebaseUserToUser(uid, data);
+      
+      return mapFirebaseUserToUser(uid, newUserData);
     } catch (error: any) {
       // Map common Firebase auth errors to clearer messages
       if (error.code === 'auth/popup-blocked') {
@@ -334,31 +414,67 @@ class FirebaseService {
     try {
       const userRef = doc(db, 'users', userId);
       
-      // First, check if user has level system fields, add if missing (migration for old users)
+      // Get current user data
       const userDoc = await getDoc(userRef);
+      if (!userDoc.exists()) {
+        throw new Error('User document not found');
+      }
+      
       const userData = userDoc.data() || {};
+      console.log('📊 Current user data:', userData);
       
-      const ensureLevelFields: any = {};
-      if (userData.level === undefined) ensureLevelFields.level = 1;
-      if (userData.experience_points === undefined) ensureLevelFields.experience_points = 0;
-      if (userData.services_completed === undefined) ensureLevelFields.services_completed = 0;
-      if (userData.services_requested === undefined) ensureLevelFields.services_requested = 0;
-      if (userData.custom_credits_enabled === undefined) ensureLevelFields.custom_credits_enabled = false;
+      // Ensure all required fields exist (migration for existing users)
+      const ensureFields: any = {};
+      if (userData.level === undefined) ensureFields.level = 1;
+      if (userData.experience_points === undefined) ensureFields.experience_points = 0;
+      if (userData.services_completed === undefined) ensureFields.services_completed = 0;
+      if (userData.services_requested === undefined) ensureFields.services_requested = 0;
+      if (userData.custom_credits_enabled === undefined) ensureFields.custom_credits_enabled = false;
+      if (userData.reputation_score === undefined) ensureFields.reputation_score = 5.0;
+      if (userData.total_reviews === undefined) ensureFields.total_reviews = 0;
       
-      const updatePayload = { ...ensureLevelFields, ...updates, updated_at: serverTimestamp() };
+      // Handle XP and level calculation if services_completed is being updated
+      let calculatedUpdates = { ...updates };
+      if (updates.services_completed !== undefined) {
+        const newServicesCompleted = updates.services_completed;
+        const newXP = newServicesCompleted * 50; // 50 XP per service
+        const newLevel = Math.floor(newXP / 100) + 1; // Level up every 100 XP
+        
+        calculatedUpdates = {
+          ...updates,
+          experience_points: newXP,
+          level: newLevel
+        };
+        
+        console.log('🎯 XP/Level calculation:', {
+          servicesCompleted: newServicesCompleted,
+          newXP,
+          newLevel
+        });
+      }
+      
+      const updatePayload = { 
+        ...ensureFields, 
+        ...calculatedUpdates, 
+        updated_at: serverTimestamp() 
+      };
+      
       console.log('📝 Updating Firestore with payload:', updatePayload);
       
+      // Use merge: true to ensure we don't overwrite existing data
       await updateDoc(userRef, updatePayload);
       console.log('✅ Successfully updated user in Firestore');
       
-      const updated = await getDoc(userRef);
-      const result = mapFirebaseUserToUser(userId, updated.data() || {});
+      // Fetch updated user data
+      const updatedDoc = await getDoc(userRef);
+      const result = mapFirebaseUserToUser(userId, updatedDoc.data() || {});
       
-      console.log('✅ Updated user profile:', {
+      console.log('✅ Updated user profile result:', {
         id: result.id,
         level: result.level,
         xp: result.experience_points,
-        servicesCompleted: result.services_completed
+        servicesCompleted: result.services_completed,
+        username: result.username
       });
       
       return result;
@@ -511,6 +627,54 @@ class FirebaseService {
       console.log('✅ Service updated in Firestore:', serviceId);
     } catch (error: any) {
       console.error('❌ Failed to update service:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Block a user (admin only)
+   */
+  async blockUser(userId: string, reason: string, adminId: string): Promise<void> {
+    try {
+      if (!db) throw new Error('Firebase not initialized');
+      
+      const userRef = doc(db, 'users', userId);
+      await updateDoc(userRef, {
+        is_blocked: true,
+        blocked_at: new Date().toISOString(),
+        blocked_reason: reason,
+        blocked_by: adminId,
+        updated_at: serverTimestamp(),
+      });
+      
+      console.log('✅ User blocked in Firestore:', userId);
+    } catch (error: any) {
+      console.error('❌ Failed to block user:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Unblock a user (admin only)
+   */
+  async unblockUser(userId: string, adminId: string): Promise<void> {
+    try {
+      if (!db) throw new Error('Firebase not initialized');
+      
+      const userRef = doc(db, 'users', userId);
+      await updateDoc(userRef, {
+        is_blocked: false,
+        blocked_at: null,
+        blocked_reason: null,
+        blocked_by: null,
+        unblocked_by: adminId,
+        unblocked_at: new Date().toISOString(),
+        updated_at: serverTimestamp(),
+      });
+      
+      console.log('✅ User unblocked in Firestore:', userId, 'by admin:', adminId);
+    } catch (error: any) {
+      console.error('❌ Failed to unblock user:', error);
       throw error;
     }
   }

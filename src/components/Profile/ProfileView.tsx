@@ -5,7 +5,8 @@ import { EmergencyContact, Review } from '../../types';
 import { LevelPerkList, LevelBadge } from '../Level/LevelProgress';
 import LevelProgressDetail from '../Level/LevelProgressDetail';
 import { dataService } from '../../services/dataService';
-import { calculateLevel, getLevelProgress } from '../../services/levelService';
+import { getLevelProgress } from '../../services/levelService';
+import { googleProfileService } from '../../services/googleProfileService';
 
 export const ProfileView: React.FC = () => {
   const { user, updateUser } = useAuth();
@@ -38,6 +39,7 @@ export const ProfileView: React.FC = () => {
   const [pwMessage, setPwMessage] = useState('');
   const [pwError, setPwError] = useState('');
   const [pwLoading, setPwLoading] = useState(false);
+  const [error, setError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Reviews state
@@ -75,15 +77,44 @@ export const ProfileView: React.FC = () => {
 
   // Listen for profile refresh events (when reviews are submitted)
   useEffect(() => {
-    const handleRefresh = () => {
+    const handleRefresh = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      console.log('🔄 Profile refresh event received:', customEvent.detail);
+      // Force component re-render by updating local state
       if (user?.id) {
         loadReviews();
+        // Force a state update to trigger re-render
+        setEditData(prev => ({ ...prev }));
+        // Refresh emergency contacts from user data
+        if (user.emergency_contacts) {
+          setEmergencyContacts(user.emergency_contacts);
+        }
+      }
+    };
+
+    // Listen for level up events
+    const handleLevelUp = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      console.log('🎉 Level up event received in ProfileView:', customEvent.detail);
+      // Force refresh user data from AuthContext
+      if (user?.id) {
+        loadReviews();
+        // Force a state update to trigger re-render
+        setEditData(prev => ({ ...prev }));
+        // Refresh emergency contacts from user data
+        if (user.emergency_contacts) {
+          setEmergencyContacts(user.emergency_contacts);
+        }
       }
     };
 
     window.addEventListener('timebank:refreshProfileAndDashboard', handleRefresh);
-    return () => window.removeEventListener('timebank:refreshProfileAndDashboard', handleRefresh);
-  }, [user?.id]);
+    window.addEventListener('timebank:levelUp', handleLevelUp);
+    return () => {
+      window.removeEventListener('timebank:refreshProfileAndDashboard', handleRefresh);
+      window.removeEventListener('timebank:levelUp', handleLevelUp);
+    };
+  }, [user?.id, user?.emergency_contacts]);
 
   // Load reviews for the current user
   const loadReviews = async () => {
@@ -182,24 +213,75 @@ export const ProfileView: React.FC = () => {
       let saveSuccess = false;
       let savedUser = null;
       
-      // Method 1: Direct dataService update
-      try {
-        console.log('🔄 Trying dataService.updateUser...');
-        savedUser = await dataService.updateUser(user.id, updatedFields);
-        console.log('✅ dataService save successful:', savedUser);
-        saveSuccess = true;
-      } catch (dataServiceError: any) {
-        console.warn('⚠️ dataService failed:', dataServiceError.message);
-        
-        // Method 2: AuthContext update as fallback
+      // Check if this is a Google user and use alternative save method
+      if (googleProfileService.isGoogleUser(user)) {
+        console.log('🔄 Google user detected, using enhanced GoogleProfileService...');
         try {
-          console.log('🔄 Trying AuthContext.updateUser as fallback...');
-          await updateUser(updatedFields);
-          console.log('✅ AuthContext save successful');
-          savedUser = { ...user, ...updatedFields };
+          // Validate profile data first
+          const validation = googleProfileService.validateProfileData(updatedFields);
+          if (!validation.valid) {
+            alert(`❌ Validation errors:\n${validation.errors.join('\n')}`);
+            return;
+          }
+          
+          // Use enhanced Firebase error recovery method
+          const result = await googleProfileService.saveWithFirebaseRecovery(user.id, updatedFields);
+          
+          if (result.success && result.user) {
+            console.log('✅ GoogleProfileService save successful:', result.user);
+            savedUser = result.user;
+            saveSuccess = true;
+            
+            // Show success message (especially if using fallback method)
+            if (result.message !== 'Profile saved successfully!') {
+              console.log('ℹ️ Using fallback method:', result.message);
+              // You could show a toast notification here if desired
+            }
+            
+            // Refresh profile in context
+            await googleProfileService.refreshProfileInContext(user.id);
+            
+            // Also update the AuthContext
+            try {
+              await updateUser(updatedFields);
+              console.log('✅ AuthContext updated successfully');
+            } catch (contextError) {
+              console.warn('⚠️ Failed to update AuthContext, but profile saved:', contextError);
+            }
+          } else {
+            console.error('❌ GoogleProfileService failed:', result.message);
+            setError(result.message);
+            return;
+          }
+          
+        } catch (googleError: any) {
+          console.error('❌ GoogleProfileService unexpected error:', googleError);
+          setError('Failed to save profile. Please try again.');
+          return;
+        }
+      }
+      
+      // Fallback methods for non-Google users or if Google service fails
+      if (!saveSuccess) {
+        // Method 1: Direct dataService update
+        try {
+          console.log('🔄 Trying dataService.updateUser...');
+          savedUser = await dataService.updateUser(user.id, updatedFields);
+          console.log('✅ dataService save successful:', savedUser);
           saveSuccess = true;
-        } catch (authError: any) {
-          console.warn('⚠️ AuthContext also failed:', authError.message);
+        } catch (dataServiceError: any) {
+          console.warn('⚠️ dataService failed:', dataServiceError.message);
+          
+          // Method 2: AuthContext update as fallback
+          try {
+            console.log('🔄 Trying AuthContext.updateUser as fallback...');
+            await updateUser(updatedFields);
+            console.log('✅ AuthContext save successful');
+            savedUser = { ...user, ...updatedFields };
+            saveSuccess = true;
+          } catch (authError: any) {
+            console.warn('⚠️ AuthContext also failed:', authError.message);
+          }
         }
       }
       
@@ -236,37 +318,6 @@ export const ProfileView: React.FC = () => {
       // Even if remote save fails, we have localStorage backup
       alert('⚠️ Profile saved locally but may not sync to server. Your changes are preserved.');
       setEditing(false);
-    }
-  };
-
-  // Level system test function
-  const testLevelSystem = async () => {
-    if (!user) return;
-    
-    console.log('🧪 Testing level system...');
-    const currentXP = user.experience_points || 0;
-    const newXP = currentXP + 150; // Add 150 XP for testing
-    
-    console.log('📊 Level test:', {
-      currentXP,
-      newXP,
-      currentLevel: user.level,
-      calculatedLevel: calculateLevel(newXP)
-    });
-    
-    try {
-      await dataService.updateUser(user.id, {
-        experience_points: newXP,
-        services_completed: (user.services_completed || 0) + 1
-      });
-      
-      alert(`✅ Added 150 XP! New total: ${newXP} XP`);
-      
-      // Refresh the page to see changes
-      setTimeout(() => window.location.reload(), 1000);
-    } catch (error) {
-      console.error('❌ Level test failed:', error);
-      alert('❌ Level test failed');
     }
   };
 
@@ -570,8 +621,8 @@ export const ProfileView: React.FC = () => {
     }
   };
 
-  const handleAddEmergencyContact = () => {
-    if (newContact.name && newContact.phone) {
+  const handleAddEmergencyContact = async () => {
+    if (newContact.name && newContact.phone && validatePhoneNumber(newContact.phone)) {
       const contact: EmergencyContact = {
         id: Date.now().toString(),
         ...newContact
@@ -583,14 +634,66 @@ export const ProfileView: React.FC = () => {
         updatedContacts = emergencyContacts.map(c => ({ ...c, isPrimary: false }));
       }
       
-      setEmergencyContacts([...updatedContacts, contact]);
+      const newContacts = [...updatedContacts, contact];
+      setEmergencyContacts(newContacts);
       setNewContact({ name: '', phone: '', relationship: '', isPrimary: false });
       setShowAddContact(false);
+      
+      // Save immediately to user profile
+      console.log('💾 Saving emergency contact to user profile...');
+      try {
+        if (!user?.id) {
+          throw new Error('User ID not available');
+        }
+        
+        const updatedFields = {
+          emergency_contacts: newContacts
+        };
+        
+        // Save to dataService
+        await dataService.updateUser(user.id, updatedFields);
+        console.log('✅ Emergency contact saved successfully');
+        
+        // Also update AuthContext
+        await updateUser(updatedFields);
+        console.log('✅ AuthContext updated with new emergency contact');
+        
+        alert('✅ Emergency contact added successfully!');
+      } catch (error: any) {
+        console.error('❌ Failed to save emergency contact:', error);
+        alert('⚠️ Contact added locally but failed to sync. Please save your profile.');
+      }
+    } else {
+      alert('❌ Please enter a valid name and phone number');
     }
   };
 
-  const handleDeleteEmergencyContact = (contactId: string) => {
-    setEmergencyContacts(emergencyContacts.filter(c => c.id !== contactId));
+  const handleDeleteEmergencyContact = async (contactId: string) => {
+    const updatedContacts = emergencyContacts.filter(c => c.id !== contactId);
+    setEmergencyContacts(updatedContacts);
+    
+    // Save immediately to user profile
+    console.log('💾 Saving emergency contact deletion...');
+    try {
+      if (!user?.id) {
+        throw new Error('User ID not available');
+      }
+      
+      const updatedFields = {
+        emergency_contacts: updatedContacts
+      };
+      
+      // Save to dataService
+      await dataService.updateUser(user.id, updatedFields);
+      console.log('✅ Emergency contact deleted successfully');
+      
+      // Also update AuthContext
+      await updateUser(updatedFields);
+      console.log('✅ AuthContext updated after contact deletion');
+    } catch (error: any) {
+      console.error('❌ Failed to delete emergency contact:', error);
+      alert('⚠️ Contact deleted locally but failed to sync. Please save your profile.');
+    }
   };
 
   const handleCallEmergencyContact = (phone: string) => {
@@ -743,14 +846,6 @@ export const ProfileView: React.FC = () => {
                   >
                     <X className="w-4 h-4" />
                     <span className="hidden sm:inline">Cancel</span>
-                  </button>
-                  <button
-                    onClick={testLevelSystem}
-                    className="bg-purple-500 hover:bg-purple-600 text-white px-3 md:px-4 py-2 rounded-lg flex items-center gap-2 transition-colors text-sm md:text-base tap-target"
-                    title="Test Level System (+150 XP)"
-                  >
-                    <Award className="w-4 h-4" />
-                    <span className="hidden sm:inline">Test Level</span>
                   </button>
                 </div>
               )}

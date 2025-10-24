@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TimeBank Functionality Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .test-section { border: 1px solid #ddd; margin: 20px 0; padding: 20px; border-radius: 8px; }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+        .info { background-color: #d1ecf1; border-color: #bee5eb; }
+        button { padding: 10px 20px; margin: 5px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        input { padding: 8px; margin: 5px; border: 1px solid #ddd; border-radius: 4px; }
+        .log { background: #f8f9fa; padding: 10px; margin: 10px 0; border-radius: 4px; font-family: monospace; }
+    </style>
+</head>
+<body>
+    <h1>🧪 TimeBank Functionality Test</h1>
+    
+    <!-- OTP Test Section -->
+    <div class="test-section info">
+        <h2>📱 OTP Service Test</h2>
+        <p>Test if real SMS OTP is working properly</p>
+        
+        <div>
+            <input type="tel" id="phoneNumber" placeholder="+1234567890" style="width: 200px;">
+            <button onclick="testOTPSend()">Send Real SMS OTP</button>
+        </div>
+        
+        <div style="margin-top: 10px;">
+            <input type="text" id="otpCode" placeholder="Enter OTP code" style="width: 150px;">
+            <button onclick="testOTPVerify()">Verify OTP</button>
+        </div>
+        
+        <div id="otpLog" class="log"></div>
+    </div>
+
+    <!-- Chat Test Section -->
+    <div class="test-section info">
+        <h2>💬 Chat Service Test</h2>
+        <p>Test if chat functionality is working</p>
+        
+        <div>
+            <input type="text" id="chatMessage" placeholder="Type a test message" style="width: 300px;">
+            <button onclick="testChatSend()">Send Chat Message</button>
+        </div>
+        
+        <div style="margin-top: 10px;">
+            <label>
+                <input type="checkbox" id="enhanceAI"> Enhance with AI (requires Groq API key)
+            </label>
+        </div>
+        
+        <div id="chatLog" class="log"></div>
+    </div>
+
+    <!-- Server Status -->
+    <div class="test-section">
+        <h2>🔍 Server Status</h2>
+        <button onclick="checkServerStatus()">Check OTP Server Status</button>
+        <div id="serverLog" class="log"></div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:4000';
+        
+        function log(elementId, message, type = 'info') {
+            const element = document.getElementById(elementId);
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = `[${timestamp}] ${message}\n`;
+            element.textContent += logEntry;
+            element.scrollTop = element.scrollHeight;
+            
+            // Change section color based on result
+            const section = element.closest('.test-section');
+            section.className = `test-section ${type}`;
+        }
+
+        async function checkServerStatus() {
+            log('serverLog', '🔍 Checking server status...', 'info');
+            
+            try {
+                const response = await fetch(`${API_URL}/health`);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    log('serverLog', `✅ Server is running: ${JSON.stringify(data, null, 2)}`, 'success');
+                } else {
+                    log('serverLog', `❌ Server error: ${response.status}`, 'error');
+                }
+            } catch (error) {
+                log('serverLog', `❌ Server not reachable: ${error.message}`, 'error');
+                log('serverLog', '💡 Make sure to run: cd server && npm start', 'info');
+            }
+        }
+
+        async function testOTPSend() {
+            const phoneNumber = document.getElementById('phoneNumber').value;
+            
+            if (!phoneNumber) {
+                log('otpLog', '❌ Please enter a phone number', 'error');
+                return;
+            }
+            
+            log('otpLog', `📱 Sending real SMS OTP to: ${phoneNumber}`, 'info');
+            
+            try {
+                const response = await fetch(`${API_URL}/api/send-otp`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phoneNumber })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    log('otpLog', `✅ SMS sent successfully: ${data.message}`, 'success');
+                    log('otpLog', `📱 Check your phone for the OTP code`, 'info');
+                } else {
+                    log('otpLog', `❌ Failed to send SMS: ${data.error}`, 'error');
+                }
+            } catch (error) {
+                log('otpLog', `❌ Network error: ${error.message}`, 'error');
+            }
+        }
+
+        async function testOTPVerify() {
+            const phoneNumber = document.getElementById('phoneNumber').value;
+            const otp = document.getElementById('otpCode').value;
+            
+            if (!phoneNumber || !otp) {
+                log('otpLog', '❌ Please enter both phone number and OTP code', 'error');
+                return;
+            }
+            
+            log('otpLog', `🔐 Verifying OTP: ${otp}`, 'info');
+            
+            try {
+                const response = await fetch(`${API_URL}/api/verify-otp`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phoneNumber, otp })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    log('otpLog', `✅ OTP verified successfully: ${data.message}`, 'success');
+                } else {
+                    log('otpLog', `❌ OTP verification failed: ${data.error}`, 'error');
+                }
+            } catch (error) {
+                log('otpLog', `❌ Network error: ${error.message}`, 'error');
+            }
+        }
+
+        function testChatSend() {
+            const message = document.getElementById('chatMessage').value;
+            const enhanceAI = document.getElementById('enhanceAI').checked;
+            
+            if (!message) {
+                log('chatLog', '❌ Please enter a message', 'error');
+                return;
+            }
+            
+            log('chatLog', `💬 Testing chat message: "${message}"`, 'info');
+            
+            try {
+                // Simulate chat service (since we can't easily test the full chat flow here)
+                const testMessage = {
+                    id: `test_${Date.now()}`,
+                    content: message,
+                    timestamp: new Date().toISOString(),
+                    enhanceAI: enhanceAI
+                };
+                
+                log('chatLog', `✅ Chat message created: ${JSON.stringify(testMessage, null, 2)}`, 'success');
+                log('chatLog', `📝 Message would be stored in localStorage and sent to recipient`, 'info');
+                
+                if (enhanceAI) {
+                    log('chatLog', `🤖 AI enhancement ${window.VITE_GROQ_API_KEY ? 'would be attempted' : 'disabled (no Groq API key)'}`, 'info');
+                }
+                
+                // Clear the input
+                document.getElementById('chatMessage').value = '';
+                
+            } catch (error) {
+                log('chatLog', `❌ Chat test failed: ${error.message}`, 'error');
+            }
+        }
+
+        // Auto-check server status on load
+        window.addEventListener('load', () => {
+            checkServerStatus();
+        });
+    </script>
+</body>
+</html>

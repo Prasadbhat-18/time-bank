@@ -11,13 +11,42 @@ service cloud.firestore {
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
+    
+    // Validate user data for Google login compatibility
+    function isValidUserData(data) {
+      return data.keys().hasAll(['email']) &&
+             data.email is string &&
+             data.email.size() > 0;
+    }
+    
+    // Check if user update contains only allowed fields
+    function isValidUserUpdate(data) {
+      let allowedFields = [
+        'username', 'bio', 'avatar_url', 'phone', 'email',
+        'reputation_score', 'total_reviews', 'created_at',
+        'level', 'experience_points', 'services_completed', 'services_requested',
+        'custom_credits_enabled', 'updated_at'
+      ];
+      return data.diff(resource.data).affectedKeys().hasOnly(allowedFields);
+    }
 
     // Users collection - READ ALL (needed for profiles, providers, chat peers)
-    // But only write your own
+    // But only write your own - ENHANCED for Google login support
     match /users/{userId} {
       allow read: if true;  // Allow public read access for login/registration
-      allow create: if isSignedIn() && isOwner(userId);
-      allow update, delete: if isOwner(userId);
+      
+      // Allow create for new users (Google login, phone registration)
+      allow create: if isSignedIn() && 
+                   isOwner(userId) && 
+                   isValidUserData(request.resource.data);
+      
+      // Allow update for profile editing and XP/level progression - CRITICAL for Google users
+      allow update: if isSignedIn() && 
+                   isOwner(userId) && 
+                   isValidUserUpdate(request.resource.data);
+      
+      // Prevent deletion of user profiles
+      allow delete: if false;
     }
 
     // Skills - read for all authenticated users

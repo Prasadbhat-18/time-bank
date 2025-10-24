@@ -25,6 +25,14 @@ export interface User {
   services_completed?: number;
   services_requested?: number; // Track service requests for 3:1 balance
   custom_credits_enabled?: boolean; // Unlocked at level 5
+  // Admin moderation fields
+  is_blocked?: boolean;
+  blocked_at?: string;
+  blocked_reason?: string;
+  blocked_by?: string; // Admin user ID who blocked this user
+  // Authentication provider fields
+  auth_provider?: string; // 'google', 'phone', 'email', etc.
+  google_profile_complete?: boolean; // Track if Google profile data has been captured
 }
 
 export interface TimeCredit {

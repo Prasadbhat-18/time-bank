@@ -76,10 +76,18 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   useEffect(() => {
+    // First, try to restore user session from localStorage
+    const savedUser = loadUserFromStorage();
+    if (savedUser) {
+      console.log('🔄 Restoring user session from localStorage:', savedUser.username);
+      setUser(savedUser);
+      setLoading(false); // Set loading to false immediately for instant UI
+    }
+
     if (isFirebaseConfigured() && auth) {
       // Use Firebase authentication
       const unsub = onAuthStateChanged(auth, async (fbUser: FirebaseUser | null) => {
-        console.log(' Auth state changed:', { 
+        console.log('🔥 Auth state changed:', { 
           hasUser: !!fbUser, 
           uid: fbUser?.uid,
           email: fbUser?.email 
@@ -87,15 +95,26 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setFirebaseUser(fbUser);
         try {
           if (fbUser) {
-            console.log(' Loading user profile from Firestore...');
+            console.log('📊 Loading user profile from Firestore...');
             // Attempt to load user profile from Firestore
             const u = await firebaseService.getCurrentUser(fbUser.uid);
             if (u) {
-              console.log(' User profile loaded successfully:', { id: u.id, username: u.username });
+              console.log('✅ User profile loaded successfully:', { id: u.id, username: u.username });
+              
+              // Check if user is blocked
+              if (u.is_blocked) {
+                console.log('🚫 User is blocked, logging out');
+                await firebaseService.logout();
+                throw new Error(`Account blocked: ${u.blocked_reason || 'Contact administrator for more information'}`);
+              }
+              
               setUser(u);
               saveUserToStorage(u);
+              
+              // Ensure initial credits for the user
+              await dataService.ensureInitialCredits(u.id);
             } else {
-              console.log(' No profile found in Firestore, creating fallback...');
+              console.log('⚠️ No profile found in Firestore, creating fallback...');
               // If no profile exists in Firestore, construct a minimal fallback profile
               const fallbackUser: User = {
                 id: fbUser.uid,
@@ -108,14 +127,21 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
               };
               setUser(fallbackUser);
               saveUserToStorage(fallbackUser);
+              
+              // Create user in dataService and ensure credits
+              await dataService.createUser(fallbackUser);
+              await dataService.ensureInitialCredits(fallbackUser.id);
             }
           } else {
-            setUser(null);
-            saveUserToStorage(null);
+            // Only clear user if we don't have a saved session
+            if (!savedUser) {
+              setUser(null);
+              saveUserToStorage(null);
+            }
           }
         } catch (error: any) {
           // Handle permission or other Firestore errors gracefully.
-          console.error('Error while loading Firebase user profile:', error);
+          console.error('❌ Error while loading Firebase user profile:', error);
           // If we have an authenticated Firebase user but Firestore access is denied,
           // create a safe fallback user so the UI remains usable.
           if (fbUser) {
@@ -130,7 +156,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             };
             setUser(fallbackUser);
             saveUserToStorage(fallbackUser);
-          } else {
+            
+            // Ensure credits even for fallback users
+            try {
+              await dataService.ensureInitialCredits(fallbackUser.id);
+            } catch (creditsError) {
+              console.warn('Failed to ensure initial credits for fallback user:', creditsError);
+            }
+          } else if (!savedUser) {
             setUser(null);
             saveUserToStorage(null);
           }
@@ -141,14 +174,30 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       });
       return () => unsub();
     } else {
-      // Use mock authentication - check localStorage first
-      console.log('Firebase not configured, using mock authentication mode');
+      // Mock mode - load from localStorage if available
       const savedUser = loadUserFromStorage();
       if (savedUser) {
         setUser(savedUser);
+      } else {
+        setUser(mockUser);
+        saveUserToStorage(mockUser);
       }
       setLoading(false);
     }
+
+    // Listen for profile update events from GoogleProfileService
+    const handleProfileUpdate = (event: CustomEvent) => {
+      const { user: updatedUser } = event.detail;
+      console.log('🔄 AuthContext: Received profile update event:', updatedUser.username);
+      setUser(updatedUser);
+      saveUserToStorage(updatedUser);
+    };
+
+    window.addEventListener('timebank:profile:updated', handleProfileUpdate as EventListener);
+
+    return () => {
+      window.removeEventListener('timebank:profile:updated', handleProfileUpdate as EventListener);
+    };
   }, []);
 
   // Grant initial credits on first login (mock or firebase)
@@ -366,6 +415,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             created_at: new Date().toISOString(),
           } as any);
         }
+        
+        // Check if user is blocked
+        if (storedUser.is_blocked) {
+          throw new Error(`Account blocked: ${storedUser.blocked_reason || 'Contact administrator for more information'}`);
+        }
+        
         setUser(storedUser);
         saveUserToStorage(storedUser);
         return;
@@ -388,6 +443,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           };
           await dataService.createUser(gmailUser);
         }
+        
+        // Check if Gmail user is blocked
+        if (gmailUser.is_blocked) {
+          throw new Error(`Account blocked: ${gmailUser.blocked_reason || 'Contact administrator for more information'}`);
+        }
+        
         setUser(gmailUser);
         saveUserToStorage(gmailUser);
         return;
@@ -418,8 +479,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (!phoneUser) {
         // Create new user if doesn't exist
         console.log('👤 Creating new user for phone:', phone);
+        const phoneUserId = `phone_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         phoneUser = {
-          id: `phone-${Date.now()}`,
+          id: phoneUserId,
           email: `${phone.replace(/[^0-9]/g, '')}@phone.timebank.com`,
           phone,
           username: `user_${phone.slice(-4)}`,
@@ -430,16 +492,36 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           experience_points: 0,
           services_completed: 0,
           custom_credits_enabled: false,
-          created_at: new Date().toISOString()
+          auth_provider: 'phone',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
         };
+        
+        // Create user in dataService with proper persistence
         await dataService.createUser(phoneUser);
         console.log('✅ New phone user created:', phoneUser.id);
+        
+        // Ensure initial credits for new phone user
+        await dataService.ensureInitialCredits(phoneUser.id, 10);
+        console.log('💰 Initial credits granted to phone user');
       } else {
         console.log('👤 Existing phone user found:', phoneUser.id);
+        
+        // Update last login time for existing user
+        phoneUser.updated_at = new Date().toISOString();
+        await dataService.updateUser(phoneUser.id, { updated_at: phoneUser.updated_at });
       }
 
       setUser(phoneUser);
       saveUserToStorage(phoneUser);
+      
+      // Store phone login session info
+      localStorage.setItem('timebank_phone_session', JSON.stringify({
+        phone,
+        userId: phoneUser.id,
+        loginTime: new Date().toISOString()
+      }));
+      
       console.log('🎉 Phone login successful for:', phoneUser.username);
     } catch (error: any) {
       console.error('❌ Phone login failed:', error);
@@ -538,16 +620,35 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
     
     try {
+      console.log('🔵 Starting Google login process...');
       const user = await firebaseService.loginWithGoogle();
+      
       if (user) {
+        console.log('✅ Google login successful:', {
+          id: user.id,
+          email: user.email,
+          username: user.username,
+          level: user.level,
+          xp: user.experience_points
+        });
+        
         setUser(user);
         saveUserToStorage(user);
+        
+        // Dispatch event to refresh UI components
+        setTimeout(() => {
+          console.log('📡 Dispatching refresh event after Google login');
+          window.dispatchEvent(new CustomEvent('timebank:refreshProfileAndDashboard', {
+            detail: { user }
+          }));
+        }, 100);
       } else {
         // If null, a redirect flow was likely initiated; no action needed here.
+        console.log('🔄 Google login redirect flow initiated');
         return;
       }
     } catch (error: any) {
-      console.error('Google login error:', error);
+      console.error('❌ Google login error:', error);
       // Provide more helpful error messages
       if (error.code === 'auth/popup-blocked') {
         throw new Error('Google login popup was blocked. Please allow popups for this site.');

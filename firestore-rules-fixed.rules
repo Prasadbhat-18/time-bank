@@ -1,0 +1,116 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions for user authentication and authorization
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isValidUserData(data) {
+      return data.keys().hasAll(['email', 'username']) &&
+             data.email is string &&
+             data.username is string &&
+             data.email.size() > 0 &&
+             data.username.size() > 0;
+    }
+    
+    function isValidUserUpdate(data) {
+      // Allow updates to profile fields, XP, and level system
+      let allowedFields = [
+        'username', 'bio', 'avatar_url', 'phone', 
+        'reputation_score', 'total_reviews',
+        'level', 'experience_points', 'services_completed', 'services_requested',
+        'custom_credits_enabled', 'updated_at'
+      ];
+      
+      return data.diff(resource.data).affectedKeys().hasOnly(allowedFields);
+    }
+    
+    // Users collection - Critical for Google login profile editing and XP updates
+    match /users/{userId} {
+      // Allow read access to own profile and basic info for others
+      allow read: if isAuthenticated() && (
+        isOwner(userId) || 
+        // Allow reading basic profile info for service providers
+        true
+      );
+      
+      // Allow create for new users (Google login, phone registration)
+      allow create: if isAuthenticated() && 
+                   isOwner(userId) && 
+                   isValidUserData(request.resource.data);
+      
+      // Allow updates to own profile - CRITICAL for Google users
+      allow update: if isAuthenticated() && 
+                   isOwner(userId) && 
+                   isValidUserUpdate(request.resource.data);
+      
+      // Prevent deletion of user profiles
+      allow delete: if false;
+    }
+    
+    // Services collection
+    match /services/{serviceId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && 
+                   isOwner(request.resource.data.provider_id);
+      allow update: if isAuthenticated() && 
+                   isOwner(resource.data.provider_id);
+      allow delete: if isAuthenticated() && 
+                   isOwner(resource.data.provider_id);
+    }
+    
+    // Bookings collection
+    match /bookings/{bookingId} {
+      allow read: if isAuthenticated() && (
+        isOwner(resource.data.provider_id) || 
+        isOwner(resource.data.requester_id)
+      );
+      allow create: if isAuthenticated() && 
+                   isOwner(request.resource.data.requester_id);
+      allow update: if isAuthenticated() && (
+        isOwner(resource.data.provider_id) || 
+        isOwner(resource.data.requester_id)
+      );
+      allow delete: if isAuthenticated() && (
+        isOwner(resource.data.provider_id) || 
+        isOwner(resource.data.requester_id)
+      );
+    }
+    
+    // Reviews collection
+    match /reviews/{reviewId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && 
+                   isOwner(request.resource.data.reviewer_id);
+      allow update: if isAuthenticated() && 
+                   isOwner(resource.data.reviewer_id);
+      allow delete: if isAuthenticated() && 
+                   isOwner(resource.data.reviewer_id);
+    }
+    
+    // Skills collection (read-only reference data)
+    match /skills/{skillId} {
+      allow read: if isAuthenticated();
+      allow write: if false; // Skills are managed by admins only
+    }
+    
+    // Chat messages (if using Firestore for chat)
+    match /chats/{chatId} {
+      allow read, write: if isAuthenticated() && (
+        request.auth.uid in resource.data.participants ||
+        request.auth.uid in request.resource.data.participants
+      );
+    }
+    
+    // Default deny all other collections
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

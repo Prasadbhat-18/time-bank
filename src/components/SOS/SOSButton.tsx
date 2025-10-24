@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Phone, AlertTriangle, X, MapPin, RefreshCw, Shield } from 'lucide-react';
 import { useGeolocation } from '../../hooks/useGeolocation';
 import { useAuth } from '../../contexts/AuthContext';
+import { twilioService } from '../../services/twilioService';
 
 interface SOSButtonProps {
   userLocation?: { lat: number; lng: number };
@@ -83,31 +84,118 @@ export function SOSButton({ userLocation }: SOSButtonProps) {
     setIsExpanded(false);
   };
 
-  const triggerSOSActions = () => {
-    // Send location to emergency contacts
-    if (currentLocation) {
-      const accuracy = location?.accuracy ? ` (±${Math.round(location.accuracy)}m)` : '';
-      const locationMessage = `🚨 EMERGENCY ALERT 🚨\n\nI need immediate help!\n\nPrecise Location: https://maps.google.com/maps?q=${currentLocation.lat},${currentLocation.lng}${accuracy}\n\nCoordinates:\nLatitude: ${currentLocation.lat.toFixed(6)}\nLongitude: ${currentLocation.lng.toFixed(6)}\n\nTime: ${new Date().toLocaleString()}`;
-      
-      // In a real app, this would send SMS/notifications to emergency contacts
-      console.log('🚨 SOS ACTIVATED:', locationMessage);
-      
-      // Copy location to clipboard for easy sharing
-      if (navigator.clipboard) {
-        navigator.clipboard.writeText(locationMessage).catch(() => {
-          console.log('Could not copy to clipboard');
-        });
-      }
-      
-      // You could integrate with:
-      // - SMS API to send location to emergency contacts
-      // - Push notifications to nearby TimeBank users
-      // - Local emergency services API
-      // - Family/friend notification system
+  const triggerSOSActions = async () => {
+    if (!user) {
+      console.error('❌ User not authenticated for SOS');
+      alert('Error: You must be logged in to use SOS');
+      return;
     }
 
-    // Show success message
-    alert('SOS Alert sent! Emergency services and your contacts have been notified.');
+    if (!currentLocation) {
+      console.error('❌ Location not available for SOS');
+      alert('Error: Location is required for SOS. Please enable location access.');
+      return;
+    }
+
+    // Create distress message with location
+    const accuracy = location?.accuracy ? ` (±${Math.round(location.accuracy)}m)` : '';
+    const timestamp = new Date().toLocaleString();
+    
+    const distressMessage = `🚨 EMERGENCY DISTRESS ALERT 🚨
+
+I NEED IMMEDIATE HELP!
+
+📍 Location: https://maps.google.com/maps?q=${currentLocation.lat},${currentLocation.lng}${accuracy}
+
+📊 Coordinates:
+   Latitude: ${currentLocation.lat.toFixed(6)}
+   Longitude: ${currentLocation.lng.toFixed(6)}
+   ${location?.accuracy ? `Accuracy: ±${Math.round(location.accuracy)}m` : ''}
+
+⏰ Time: ${timestamp}
+
+🆘 This is an automated SOS distress message. Contact me immediately!`;
+
+    console.log('🚨 SOS ACTIVATED - Sending REAL distress messages via SMS/WhatsApp to emergency contacts');
+    console.log('📝 Message:', distressMessage);
+
+    // Send distress messages to all emergency contacts via SMS/WhatsApp
+    let successCount = 0;
+    let failureCount = 0;
+    const failedContacts: string[] = [];
+
+    for (const contact of personalContacts) {
+      try {
+        console.log(`📨 Sending REAL SMS distress message to ${contact.name} (${contact.phone})...`);
+        console.log(`📞 Phone number: ${contact.phone}`);
+        console.log(`👤 Contact name: ${contact.name}`);
+        
+        // Send REAL SMS message via Twilio
+        const result = await twilioService.sendDistressMessage(
+          contact.phone,
+          distressMessage,
+          user.username || 'User',
+          currentLocation
+        );
+        
+        console.log(`✅ Distress message sent successfully to ${contact.name}:`, result);
+        console.log(`🆔 Message SID: ${result.sid}`);
+        console.log(`📊 Message status: ${result.status}`);
+        
+        // Store the distress alert in localStorage for tracking
+        const emergencyAlerts = JSON.parse(localStorage.getItem('emergencyAlerts') || '[]');
+        emergencyAlerts.push({
+          id: Date.now().toString(),
+          from_user_id: user.id,
+          from_username: user.username,
+          to_contact_name: contact.name,
+          to_contact_phone: contact.phone,
+          message: distressMessage,
+          location: currentLocation,
+          timestamp: new Date().toISOString(),
+          status: 'sent',
+          method: 'SMS',
+          sid: result.sid,
+          response: result
+        });
+        localStorage.setItem('emergencyAlerts', JSON.stringify(emergencyAlerts));
+        
+        successCount++;
+      } catch (error: any) {
+        console.error(`❌ Failed to send distress message to ${contact.name}:`, error);
+        console.error(`🔍 Error details:`, {
+          name: error.name,
+          message: error.message,
+          code: error.code
+        });
+        failedContacts.push(`${contact.name} (${contact.phone}): ${error.message}`);
+        failureCount++;
+      }
+    }
+
+    // Copy location to clipboard for easy sharing
+    if (navigator.clipboard && currentLocation) {
+      navigator.clipboard.writeText(distressMessage).catch(() => {
+        console.log('Could not copy to clipboard');
+      });
+    }
+
+    // Show comprehensive success/failure message
+    let message = '';
+    if (successCount > 0) {
+      message = `🚨 SOS ACTIVATED!\n\n✅ Distress alerts sent to ${successCount} emergency contact${successCount !== 1 ? 's' : ''} via SMS/WhatsApp!\n\n📍 Your location has been shared.\n\n⏰ Time: ${timestamp}`;
+      if (failureCount > 0) {
+        message += `\n\n⚠️ Failed to reach ${failureCount} contact(s):\n${failedContacts.join('\n')}`;
+      }
+    } else if (personalContacts.length === 0) {
+      message = `🚨 SOS ACTIVATED!\n\n⚠️ No emergency contacts configured.\n\n📍 Your location: ${currentLocation.lat.toFixed(4)}, ${currentLocation.lng.toFixed(4)}\n\n⏰ Time: ${timestamp}\n\nPlease add emergency contacts in your profile.`;
+    } else {
+      message = `🚨 SOS ACTIVATED!\n\n❌ Failed to send distress alerts.\n\nErrors:\n${failedContacts.join('\n')}\n\nPlease check your internet connection and try again.`;
+    }
+    
+    alert(message);
+    
+    console.log(`🎯 SOS Summary: ${successCount} sent successfully, ${failureCount} failed`);
   };
 
   const callEmergencyNumber = (number: string) => {
