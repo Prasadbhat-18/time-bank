@@ -1,4 +1,6 @@
-const API_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:4000';
+// Detect if running on Netlify or localhost
+const isNetlify = typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
+const API_URL = isNetlify ? '' : (import.meta.env.VITE_SERVER_URL || 'http://localhost:4000');
 
 export interface TwilioResponse {
     message: string;
@@ -31,7 +33,10 @@ export const twilioService = {
             // First check if the server is running and configured for REAL SMS
             try {
                 console.log('🔍 Checking server health...');
-                const healthCheck = await fetch(`${API_URL}/health`, {
+                const healthEndpoint = isNetlify ? '/.netlify/functions/health' : `${API_URL}/health`;
+                console.log('📍 Health check endpoint:', healthEndpoint);
+                
+                const healthCheck = await fetch(healthEndpoint, {
                     method: 'GET',
                     headers: {
                         'Accept': 'application/json'
@@ -65,7 +70,10 @@ export const twilioService = {
             console.log('📱 Sending REAL SMS OTP to:', formattedPhone);
             const startTime = Date.now();
             
-            const response = await fetch(`${API_URL}/api/send-otp`, {
+            const sendOtpEndpoint = isNetlify ? '/.netlify/functions/send-otp' : `${API_URL}/api/send-otp`;
+            console.log('📍 Send OTP endpoint:', sendOtpEndpoint);
+            
+            const response = await fetch(sendOtpEndpoint, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -112,7 +120,10 @@ export const twilioService = {
     async verifyOTP(phoneNumber: string, otp: string): Promise<TwilioResponse> {
         try {
             console.log('🔐 Verifying REAL SMS OTP for:', phoneNumber);
-            const response = await fetch(`${API_URL}/api/verify-otp`, {
+            const verifyOtpEndpoint = isNetlify ? '/.netlify/functions/verify-otp' : `${API_URL}/api/verify-otp`;
+            console.log('📍 Verify OTP endpoint:', verifyOtpEndpoint);
+            
+            const response = await fetch(verifyOtpEndpoint, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
