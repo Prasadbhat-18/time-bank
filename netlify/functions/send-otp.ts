@@ -2,6 +2,9 @@ import { Handler } from '@netlify/functions';
 import twilio from 'twilio';
 
 const handler: Handler = async (event) => {
+  console.log('📱 [send-otp] Request received');
+  console.log('Method:', event.httpMethod);
+  
   // Only allow POST requests
   if (event.httpMethod !== 'POST') {
     return {
@@ -12,6 +15,7 @@ const handler: Handler = async (event) => {
 
   try {
     const { phoneNumber } = JSON.parse(event.body || '{}');
+    console.log('📞 Phone number:', phoneNumber);
 
     if (!phoneNumber) {
       return {
@@ -26,24 +30,36 @@ const handler: Handler = async (event) => {
     const authToken = process.env.TWILIO_AUTH_TOKEN || process.env.VITE_TWILIO_AUTH_TOKEN;
     const serviceSid = process.env.TWILIO_SERVICE_SID || process.env.VITE_TWILIO_SERVICE_SID;
 
-    console.log('📋 Environment check:');
-    console.log('TWILIO_ACCOUNT_SID:', accountSid ? 'SET (' + accountSid.substring(0, 4) + '...)' : 'NOT SET');
-    console.log('TWILIO_AUTH_TOKEN:', authToken ? 'SET (' + authToken.substring(0, 4) + '...)' : 'NOT SET');
-    console.log('TWILIO_SERVICE_SID:', serviceSid ? 'SET (' + serviceSid.substring(0, 4) + '...)' : 'NOT SET');
+    console.log('🔍 Checking Twilio credentials:');
+    console.log('  TWILIO_ACCOUNT_SID:', accountSid ? '✅ SET' : '❌ NOT SET');
+    console.log('  TWILIO_AUTH_TOKEN:', authToken ? '✅ SET' : '❌ NOT SET');
+    console.log('  TWILIO_SERVICE_SID:', serviceSid ? '✅ SET' : '❌ NOT SET');
+    console.log('  VITE_TWILIO_ACCOUNT_SID:', process.env.VITE_TWILIO_ACCOUNT_SID ? '✅ SET' : '❌ NOT SET');
+    console.log('  VITE_TWILIO_AUTH_TOKEN:', process.env.VITE_TWILIO_AUTH_TOKEN ? '✅ SET' : '❌ NOT SET');
+    console.log('  VITE_TWILIO_SERVICE_SID:', process.env.VITE_TWILIO_SERVICE_SID ? '✅ SET' : '❌ NOT SET');
+    
+    // List all TWILIO env vars
+    const twilioVars = Object.keys(process.env).filter(k => k.includes('TWILIO'));
+    console.log('📋 All TWILIO env vars:', twilioVars);
 
     if (!accountSid || !authToken || !serviceSid) {
       console.error('❌ Twilio credentials not configured');
-      console.error('Available env vars:', Object.keys(process.env).filter(k => k.includes('TWILIO')));
       return {
         statusCode: 500,
         body: JSON.stringify({
           error: 'Twilio service not configured',
-          details: 'Missing Twilio credentials in environment. Ensure these are set in Netlify Site Settings > Build & Deploy > Environment Variables: VITE_TWILIO_ACCOUNT_SID, VITE_TWILIO_AUTH_TOKEN, VITE_TWILIO_SERVICE_SID',
-          missing: {
-            accountSid: !accountSid,
-            authToken: !authToken,
-            serviceSid: !serviceSid
-          }
+          details: 'Missing Twilio credentials. Set these in Netlify Site Settings > Build & Deploy > Environment Variables',
+          required: {
+            VITE_TWILIO_ACCOUNT_SID: 'your_account_sid',
+            VITE_TWILIO_AUTH_TOKEN: 'your_auth_token',
+            VITE_TWILIO_SERVICE_SID: 'your_service_sid'
+          },
+          found: {
+            accountSid: !!accountSid,
+            authToken: !!authToken,
+            serviceSid: !!serviceSid
+          },
+          allVars: twilioVars
         })
       };
     }
