@@ -1,6 +1,44 @@
-// Detect if running on Netlify or localhost
-const isNetlify = typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
-const API_URL = isNetlify ? '' : (import.meta.env.VITE_SERVER_URL || 'http://localhost:4000');
+// Detect environment
+const isNetlify = typeof window !== 'undefined' && 
+                  window.location.hostname !== 'localhost' && 
+                  window.location.hostname !== '127.0.0.1' &&
+                  window.location.hostname !== '0.0.0.0';
+
+const isLocalhost = typeof window !== 'undefined' && 
+                    (window.location.hostname === 'localhost' || 
+                     window.location.hostname === '127.0.0.1' ||
+                     window.location.hostname === '0.0.0.0');
+
+// Determine API URL based on environment
+let API_URL = 'http://localhost:4000'; // Default for localhost
+let USE_NETLIFY_FUNCTIONS = false;
+
+if (typeof window !== 'undefined') {
+    // On Netlify deployed site - use Netlify Functions
+    if (isNetlify) {
+        console.log('🌐 Detected Netlify environment');
+        USE_NETLIFY_FUNCTIONS = true;
+        API_URL = ''; // Relative path for Netlify Functions
+    }
+    // On localhost - try custom server first, fallback to Netlify Functions
+    else if (isLocalhost) {
+        console.log('🌐 Detected localhost environment');
+        // Try environment variable for custom server URL
+        if (import.meta.env.VITE_SERVER_URL) {
+            API_URL = import.meta.env.VITE_SERVER_URL;
+            console.log('🌐 Using custom server URL from env:', API_URL);
+        } else {
+            API_URL = 'http://localhost:4000';
+            console.log('🌐 Using default localhost server');
+        }
+        USE_NETLIFY_FUNCTIONS = false;
+    }
+}
+
+console.log('🌐 Twilio Service Configuration:');
+console.log('  Environment:', isNetlify ? 'Netlify' : isLocalhost ? 'Localhost' : 'Unknown');
+console.log('  API_URL:', API_URL);
+console.log('  Use Netlify Functions:', USE_NETLIFY_FUNCTIONS);
 
 export interface TwilioResponse {
     message: string;
@@ -31,6 +69,7 @@ export const twilioService = {
             }
 
             // First check if the server is running and configured for REAL SMS
+            let serverHealthy = false;
             try {
                 console.log('🔍 Checking server health...');
                 const healthEndpoint = isNetlify ? '/.netlify/functions/health' : `${API_URL}/health`;
@@ -40,11 +79,12 @@ export const twilioService = {
                     method: 'GET',
                     headers: {
                         'Accept': 'application/json'
-                    }
+                    },
+                    signal: AbortSignal.timeout(3000) // 3 second timeout
                 });
                 
                 if (!healthCheck.ok) {
-                    throw new Error(`Server not responding (HTTP ${healthCheck.status}). Please start the server with: node server/start-real-sms.js`);
+                    throw new Error(`Server not responding (HTTP ${healthCheck.status})`);
                 }
                 
                 const healthData = await healthCheck.json();
@@ -52,25 +92,74 @@ export const twilioService = {
                 
                 // Ensure we're using the REAL Twilio server, not mock
                 if (healthData.mode === 'mock') {
-                    throw new Error('Mock server detected! Please start the REAL Twilio server using: node server/start-real-sms.js');
+                    throw new Error('Mock server detected');
                 }
                 
                 if (!healthData.twilio?.configured) {
-                    throw new Error('Twilio is not properly configured on the server. Please check your .env file in the server directory with valid Twilio credentials.');
+                    throw new Error('Twilio not configured on server');
                 }
                 
+                serverHealthy = true;
                 console.log('✅ Real Twilio server confirmed - ready to send SMS');
                 console.log('🔧 Twilio Account SID:', healthData.twilio.accountSid);
                 console.log('🔧 Twilio Service SID:', healthData.twilio.serviceSid);
             } catch (error: any) {
                 console.error('❌ Server health check failed:', error.message);
-                throw new Error(`OTP service error: ${error.message}`);
+                console.error('⚠️  Server not available - will use DEVELOPMENT MODE');
+                console.error('');
+                console.error('📋 TO USE REAL SMS:');
+                console.error('1. Open a NEW terminal window');
+                console.error('2. Run: npm start (from project root)');
+                console.error('3. This will start both server and app');
+                console.error('');
+                console.error('Or manually:');
+                console.error('1. cd server');
+                console.error('2. npm install');
+                console.error('3. npm start');
+                console.error('');
+                console.error('🔗 Get Twilio credentials from: https://console.twilio.com/');
+                console.error('');
+                
+                // In development mode, we'll use mock OTP
+                serverHealthy = false;
+            }
+            
+            // If server is not healthy, use development mode with mock OTP
+            if (!serverHealthy) {
+                console.warn('');
+                console.warn('🔄 DEVELOPMENT MODE: Using mock OTP for testing');
+                console.warn('📝 For real SMS, start the OTP server');
+                console.warn('');
+                
+                // Generate a mock OTP code
+                const mockOtpCode = Math.floor(100000 + Math.random() * 900000).toString();
+                console.log('📋 MOCK OTP CODE (for development):', mockOtpCode);
+                console.log('⚠️  This is NOT a real SMS - server not running');
+                
+                // Store mock OTP for verification
+                if (typeof window !== 'undefined') {
+                    sessionStorage.setItem(`mock_otp_${formattedPhone}`, mockOtpCode);
+                    console.log('✅ Mock OTP stored in session');
+                }
+                
+                return {
+                    message: `📝 DEVELOPMENT MODE: Mock OTP sent to ${formattedPhone}\n\n⚠️  This is NOT real SMS!\n\nMock OTP Code: ${mockOtpCode}\n\n🔄 To send REAL SMS:\n1. Run: npm start\n2. Or manually start server: cd server && npm start`,
+                    status: 'pending',
+                    sid: 'MOCK_' + Date.now(),
+                    valid: true
+                };
             }
 
             console.log('📱 Sending REAL SMS OTP to:', formattedPhone);
             const startTime = Date.now();
             
-            const sendOtpEndpoint = isNetlify ? '/.netlify/functions/send-otp' : `${API_URL}/api/send-otp`;
+            // Determine endpoint based on environment
+            let sendOtpEndpoint: string;
+            if (USE_NETLIFY_FUNCTIONS) {
+                sendOtpEndpoint = '/.netlify/functions/send-otp';
+            } else {
+                sendOtpEndpoint = `${API_URL}/api/send-otp`;
+            }
             console.log('📍 Send OTP endpoint:', sendOtpEndpoint);
             
             const response = await fetch(sendOtpEndpoint, {
@@ -119,8 +208,38 @@ export const twilioService = {
 
     async verifyOTP(phoneNumber: string, otp: string): Promise<TwilioResponse> {
         try {
-            console.log('🔐 Verifying REAL SMS OTP for:', phoneNumber);
-            const verifyOtpEndpoint = isNetlify ? '/.netlify/functions/verify-otp' : `${API_URL}/api/verify-otp`;
+            console.log('🔐 Verifying OTP for:', phoneNumber);
+            
+            // Format phone number
+            let formattedPhone = phoneNumber.trim();
+            if (!formattedPhone.startsWith('+')) {
+                formattedPhone = '+91' + formattedPhone.replace(/^0+/, '');
+            }
+            
+            // Check if this is a mock OTP (development mode)
+            const mockOtpStored = typeof window !== 'undefined' ? sessionStorage.getItem(`mock_otp_${formattedPhone}`) : null;
+            if (mockOtpStored) {
+                console.log('🔄 Checking mock OTP (development mode)...');
+                if (otp === mockOtpStored) {
+                    console.log('✅ Mock OTP verified successfully (development mode)');
+                    return {
+                        message: '✅ OTP verified successfully (development mode)',
+                        status: 'approved',
+                        valid: true
+                    };
+                } else {
+                    console.error('❌ Mock OTP verification failed - code mismatch');
+                    throw new Error('Invalid OTP code');
+                }
+            }
+            
+            // Real OTP verification via server
+            let verifyOtpEndpoint: string;
+            if (USE_NETLIFY_FUNCTIONS) {
+                verifyOtpEndpoint = '/.netlify/functions/verify-otp';
+            } else {
+                verifyOtpEndpoint = `${API_URL}/api/verify-otp`;
+            }
             console.log('📍 Verify OTP endpoint:', verifyOtpEndpoint);
             
             const response = await fetch(verifyOtpEndpoint, {
@@ -129,19 +248,20 @@ export const twilioService = {
                     'Content-Type': 'application/json',
                     'Accept': 'application/json'
                 },
-                body: JSON.stringify({ phoneNumber, otp })
+                body: JSON.stringify({ phoneNumber: formattedPhone, otp }),
+                signal: AbortSignal.timeout(5000)
             });
             
             const data = await response.json();
             if (!response.ok) {
                 console.error('❌ OTP verification failed:', data);
-                throw new Error(data.error || 'Failed to verify real SMS OTP');
+                throw new Error(data.error || 'Failed to verify OTP');
             }
             
-            console.log('✅ Real SMS OTP verified successfully:', data.message);
+            console.log('✅ OTP verified successfully:', data.message);
             return data;
         } catch (error: any) {
-            console.error('❌ Failed to verify real SMS OTP:', error.message);
+            console.error('❌ Failed to verify OTP:', error.message);
             throw new Error(`OTP verification failed: ${error.message}`);
         }
     },
@@ -172,7 +292,16 @@ export const twilioService = {
             console.log('📨 Sending distress message to:', formattedPhone);
             const startTime = Date.now();
             
-            const response = await fetch(`${API_URL}/api/send-distress`, {
+            // Determine endpoint based on environment
+            let distressEndpoint: string;
+            if (USE_NETLIFY_FUNCTIONS) {
+                distressEndpoint = '/.netlify/functions/send-distress';
+            } else {
+                distressEndpoint = `${API_URL}/api/send-distress`;
+            }
+            console.log('📍 Distress endpoint:', distressEndpoint);
+            
+            const response = await fetch(distressEndpoint, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

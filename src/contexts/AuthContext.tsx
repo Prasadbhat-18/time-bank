@@ -463,66 +463,72 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (!code) {
         // Send OTP
         console.log('📱 Sending OTP to:', phone);
-        const response = await twilioService.sendOTP(phone);
-        console.log('✅ OTP sent successfully:', response.message);
-        return;
+        try {
+          const response = await twilioService.sendOTP(phone);
+          console.log('✅ OTP sent successfully:', response.message);
+          return;
+        } catch (error: any) {
+          console.error('❌ Failed to send OTP:', error);
+          throw new Error(`Failed to send OTP: ${error.message || 'Please check your phone number and try again'}`);
+        }
       }
 
       // Verify OTP
       console.log('🔐 Verifying OTP for:', phone, 'with code:', code);
-      const response = await twilioService.verifyOTP(phone, code);
-      console.log('✅ OTP verified successfully:', response.message);
+      try {
+        const response = await twilioService.verifyOTP(phone, code);
+        console.log('✅ OTP verified successfully:', response.message);
 
-      // If verification successful, create or fetch user
-      let phoneUser = await dataService.getUserByPhone(phone);
-      
-      if (!phoneUser) {
-        // Create new user if doesn't exist
-        console.log('👤 Creating new user for phone:', phone);
-        const phoneUserId = `phone_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        phoneUser = {
-          id: phoneUserId,
-          email: `${phone.replace(/[^0-9]/g, '')}@phone.timebank.com`,
+        // If verification successful, create or fetch user
+        let phoneUser = await dataService.getUserByPhone(phone);
+        
+        if (!phoneUser) {
+          // Create new user if doesn't exist
+          console.log('👤 Creating new user for phone:', phone);
+          const phoneUserId = `phone_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          phoneUser = {
+            id: phoneUserId,
+            email: `${phone.replace(/[^0-9]/g, '')}@phone.timebank.com`,
+            phone,
+            username: `user_${phone.slice(-4)}`,
+            bio: 'TimeBank user verified via phone',
+            reputation_score: 5.0,
+            total_reviews: 0,
+            level: 1,
+            experience_points: 0,
+            services_completed: 0,
+            custom_credits_enabled: false,
+            auth_provider: 'phone',
+            created_at: new Date().toISOString(),
+          };
+          
+          // Create user in dataService with proper persistence
+          await dataService.createUser(phoneUser);
+          console.log('✅ New phone user created:', phoneUser.id);
+          
+          // Ensure initial credits for new phone user
+          await dataService.ensureInitialCredits(phoneUser.id, 10);
+          console.log('💰 Initial credits granted to phone user');
+        } else {
+          console.log('👤 Existing phone user found:', phoneUser.id);
+          // Existing user found, just proceed with login
+        }
+
+        setUser(phoneUser);
+        saveUserToStorage(phoneUser);
+        
+        // Store phone login session info
+        localStorage.setItem('timebank_phone_session', JSON.stringify({
           phone,
-          username: `user_${phone.slice(-4)}`,
-          bio: 'TimeBank user verified via phone',
-          reputation_score: 5.0,
-          total_reviews: 0,
-          level: 1,
-          experience_points: 0,
-          services_completed: 0,
-          custom_credits_enabled: false,
-          auth_provider: 'phone',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        };
+          userId: phoneUser.id,
+          loginTime: new Date().toISOString()
+        }));
         
-        // Create user in dataService with proper persistence
-        await dataService.createUser(phoneUser);
-        console.log('✅ New phone user created:', phoneUser.id);
-        
-        // Ensure initial credits for new phone user
-        await dataService.ensureInitialCredits(phoneUser.id, 10);
-        console.log('💰 Initial credits granted to phone user');
-      } else {
-        console.log('👤 Existing phone user found:', phoneUser.id);
-        
-        // Update last login time for existing user
-        phoneUser.updated_at = new Date().toISOString();
-        await dataService.updateUser(phoneUser.id, { updated_at: phoneUser.updated_at });
+        console.log('🎉 Phone login successful for:', phoneUser.username);
+      } catch (error: any) {
+        console.error('❌ OTP verification failed:', error);
+        throw new Error(`Verification failed: ${error.message || 'Invalid code. Please try again'}`);
       }
-
-      setUser(phoneUser);
-      saveUserToStorage(phoneUser);
-      
-      // Store phone login session info
-      localStorage.setItem('timebank_phone_session', JSON.stringify({
-        phone,
-        userId: phoneUser.id,
-        loginTime: new Date().toISOString()
-      }));
-      
-      console.log('🎉 Phone login successful for:', phoneUser.username);
     } catch (error: any) {
       console.error('❌ Phone login failed:', error);
       throw error;

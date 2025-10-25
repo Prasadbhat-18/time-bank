@@ -10,7 +10,7 @@ export class ServiceLoader {
   private static instance: ServiceLoader;
   private cachedServices: Service[] | null = null;
   private cacheTime: number = 0;
-  private readonly CACHE_DURATION = 30000; // 30 seconds
+  private readonly CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours - services should persist
 
   static getInstance(): ServiceLoader {
     if (!ServiceLoader.instance) {

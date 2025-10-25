@@ -365,7 +365,21 @@ export const ServiceList: React.FC = () => {
                         Book Now
                       </button>
                     ) : (
-                      <User className="w-5 h-5 text-gray-400" />
+                      <button
+                        onClick={async () => {
+                          if (window.confirm('Are you sure you want to delete this service?')) {
+                            try {
+                              await dataService.deleteService(service.id, user.id);
+                              loadData();
+                            } catch (error: any) {
+                              alert('Failed to delete service: ' + (error.message || 'Unknown error'));
+                            }
+                          }
+                        }}
+                        className="px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-sm rounded transition flex items-center gap-1"
+                      >
+                        <span>×</span> Cancel
+                      </button>
                     )}
                   </div>
                 </div>

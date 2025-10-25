@@ -4,11 +4,12 @@
   "description": "Backend server for Time Bank OTP service",
   "main": "server.js",
   "scripts": {
-    "start": "node start-real-sms.js",
+    "start": "node server-enhanced.js",
+    "start:enhanced": "node server-enhanced.js",
     "start:real-sms": "node start-real-sms.js",
     "start:persistent": "node persistent-sms-server.js",
     "start:server-only": "node server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server-enhanced.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

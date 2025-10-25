@@ -424,14 +424,14 @@ export const dataService = {
     console.log('🔄 Loading services with filters:', filters);
     const startTime = Date.now();
 
-    // Use cached services if available and recent (within 30 seconds)
+    // Use cached services if available and recent (within 24 hours)
     const cacheKey = 'services_cache';
     const cacheTimeKey = 'services_cache_time';
     const cached = localStorage.getItem(cacheKey);
     const cacheTime = localStorage.getItem(cacheTimeKey);
     
-    if (cached && cacheTime && (Date.now() - parseInt(cacheTime)) < 30000) {
-      console.log('✅ Using cached services');
+    if (cached && cacheTime && (Date.now() - parseInt(cacheTime)) < 24 * 60 * 60 * 1000) {
+      console.log('✅ Using cached services (24-hour cache)');
       const cachedServices = JSON.parse(cached) as Service[];
       return this.applyFilters(cachedServices, filters);
     }
@@ -471,13 +471,68 @@ export const dataService = {
         return this.applyFilters(services, filters);
       } catch (error) {
         console.error('Failed to load services from Firestore, falling back to local services', error);
-        const localServices = [...mockServices];
+        // Fallback to permanent + shared + mock services
+        let allServices = [...mockServices];
+        try {
+          const permanentServices = permanentStorage.loadServices();
+          if (permanentServices.length > 0) {
+            const serviceMap = new Map();
+            mockServices.forEach(s => serviceMap.set(s.id, s));
+            permanentServices.forEach(s => serviceMap.set(s.id, s));
+            allServices = Array.from(serviceMap.values());
+          }
+        } catch (e) {
+          console.warn('Failed to load from permanent storage:', e);
+        }
+        try {
+          const sharedServices = loadShared<Service>('services', []);
+          if (sharedServices.length > 0) {
+            const serviceMap = new Map();
+            allServices.forEach(s => serviceMap.set(s.id, s));
+            sharedServices.forEach(s => serviceMap.set(s.id, s));
+            allServices = Array.from(serviceMap.values());
+          }
+        } catch (e) {
+          console.warn('Failed to load from shared storage:', e);
+        }
+        const localServices = allServices;
         return this.applyFilters(localServices, filters);
       }
     }
 
-    // Fallback to local services
-    const localServices = [...mockServices].map(s => ({
+    // Fallback to local services - merge from all sources to ensure cross-user visibility
+    let allServices = [...mockServices];
+    
+    // Load from permanent storage (survives logout and is shared across users)
+    try {
+      const permanentServices = permanentStorage.loadServices();
+      if (permanentServices.length > 0) {
+        console.log(`🔒 Loaded ${permanentServices.length} services from permanent storage`);
+        // Merge, prioritizing permanent storage
+        const serviceMap = new Map();
+        mockServices.forEach(s => serviceMap.set(s.id, s));
+        permanentServices.forEach(s => serviceMap.set(s.id, s));
+        allServices = Array.from(serviceMap.values());
+      }
+    } catch (error) {
+      console.warn('⚠️ Failed to load from permanent storage:', error);
+    }
+    
+    // Also load from shared storage
+    try {
+      const sharedServices = loadShared<Service>('services', []);
+      if (sharedServices.length > 0) {
+        console.log(`📦 Loaded ${sharedServices.length} services from shared storage`);
+        const serviceMap = new Map();
+        allServices.forEach(s => serviceMap.set(s.id, s));
+        sharedServices.forEach(s => serviceMap.set(s.id, s));
+        allServices = Array.from(serviceMap.values());
+      }
+    } catch (error) {
+      console.warn('⚠️ Failed to load from shared storage:', error);
+    }
+    
+    const localServices = allServices.map(s => ({
       ...s,
       provider: s.provider || mockUsers.find(u => u.id === s.provider_id),
       skill: mockSkills.find(sk => sk.id === s.skill_id),

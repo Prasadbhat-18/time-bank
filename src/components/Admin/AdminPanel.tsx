@@ -67,27 +67,8 @@ export const AdminPanel: React.FC = () => {
     try {
       console.log('🔐 Admin deleting service:', serviceId);
       
-      // Admin has full authority to delete any service
-      const allServices = await dataService.getAllRawServices();
-      const serviceToDelete = allServices.find((s: any) => s.id === serviceId);
-      
-      if (!serviceToDelete) {
-        throw new Error('Service not found');
-      }
-      
-      // Delete from all storage locations
-      const services = await dataService.getAllRawServices();
-      const updated = services.filter((s: any) => s.id !== serviceId);
-      localStorage.setItem('timebank_services', JSON.stringify(updated));
-      
-      // Also delete from permanent storage
-      try {
-        const permanentServices = JSON.parse(localStorage.getItem('timebank_services_permanent') || '[]');
-        const permanentUpdated = permanentServices.filter((s: any) => s.id !== serviceId);
-        localStorage.setItem('timebank_services_permanent', JSON.stringify(permanentUpdated));
-      } catch (e) {
-        console.warn('Could not update permanent storage');
-      }
+      // Use dataService.deleteService which handles all storage locations
+      await dataService.deleteService(serviceId, user.id);
       
       console.log('✅ Service deleted by admin:', serviceId);
       setDeletingService(null);

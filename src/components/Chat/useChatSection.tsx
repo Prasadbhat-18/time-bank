@@ -23,8 +23,8 @@ export function useChatSection() {
     <>
       {state.showInbox && <ChatInboxModal onSelectChat={openChat} onClose={closeInbox} />}
       {state.activeChat && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="w-full max-w-md bg-white rounded-xl shadow-xl border border-gray-200">
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 pointer-events-none">
+          <div className="w-full max-w-md bg-white rounded-xl shadow-xl border border-gray-200 pointer-events-auto">
             <ChatWindow peerId={state.activeChat.peerId} onClose={closeChat} />
           </div>
         </div>
