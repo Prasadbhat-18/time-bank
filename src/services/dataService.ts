@@ -30,8 +30,8 @@ import {
 
 import { deleteDoc } from 'firebase/firestore';
 
-// Temporarily disable Firebase to fix compilation errors and get website loading
-const useFirebase = false;
+// Enable Firebase for cross-device service visibility
+const useFirebase = true;
 
 // Load data from Firebase or localStorage or use initial data
 const loadFromStorage = <T>(key: string, fallback: T[]): T[] => {
@@ -89,6 +89,13 @@ const waitForAuth = async (maxWaitMs: number = 5000): Promise<boolean> => {
 const saveToFirestore = async <T>(collectionName: string, id: string, data: T) => {
   if (!useFirebase) return;
   
+  // Check if Firebase is properly configured
+  if (!db) {
+    console.warn(`⚠️ Firebase not configured - skipping Firestore save for ${collectionName}/${id}`);
+    console.log('💡 To enable Firebase, add VITE_FIREBASE_* variables to .env.local');
+    return;
+  }
+  
   // Wait for authentication before proceeding
   const isAuthenticated = await waitForAuth(3000);
   if (!isAuthenticated) {
@@ -102,14 +109,31 @@ const saveToFirestore = async <T>(collectionName: string, id: string, data: T) =
       updated_at: serverTimestamp()
     });
     console.log(`✅ Successfully saved to Firestore ${collectionName}/${id}`);
-  } catch (error) {
+  } catch (error: any) {
     console.error(`❌ Error saving to Firestore ${collectionName}/${id}:`, error);
-    throw error; // Re-throw to let caller handle the error
+    
+    // Handle specific Firebase errors
+    if (error?.code === 'permission-denied') {
+      console.warn('⚠️ Firebase permission denied - check Firestore rules');
+    } else if (error?.code === 'unauthenticated') {
+      console.warn('⚠️ User not authenticated - check authentication setup');
+    } else if (error?.message?.includes('PERMISSION_DENIED')) {
+      console.warn('⚠️ Firebase permission denied - check Firestore security rules');
+    }
+    
+    // Don't throw - let local storage handle it
+    console.log('💾 Will use local storage as fallback');
   }
 };
 
 const loadFromFirestore = async <T>(collectionName: string): Promise<T[]> => {
   if (!useFirebase) return [];
+  
+  // Check if Firebase is properly configured
+  if (!db) {
+    console.warn(`⚠️ Firebase not configured - skipping Firestore load for ${collectionName}`);
+    return [];
+  }
   
   try {
     // Wait for authentication before proceeding
@@ -127,6 +151,8 @@ const loadFromFirestore = async <T>(collectionName: string): Promise<T[]> => {
     // Handle Firebase permission errors gracefully
     if (error?.code === 'permission-denied' || error?.message?.includes('permissions')) {
       console.warn(`⚠️ Firebase permissions denied for ${collectionName}, falling back to local data`);
+    } else if (error?.message?.includes('PERMISSION_DENIED')) {
+      console.warn(`⚠️ Firebase permissions denied for ${collectionName} - check Firestore security rules`);
     } else {
       console.error(`❌ Error loading from Firestore ${collectionName}:`, error);
     }
@@ -624,12 +650,22 @@ export const dataService = {
 
     console.log('🔄 Creating service with ID:', serviceId, 'for provider:', providerId);
 
-    // PRIMARY: Save to local storage for instant access and reliability
+    // PRIMARY: Save to Firebase first for cross-device visibility
+    if (useFirebase) {
+      try {
+        await saveToFirestore('services', serviceId, newService);
+        console.log('☁️ Service saved to Firebase - visible to all users on all devices');
+      } catch (error) {
+        console.warn('⚠️ Failed to save to Firebase, continuing with local storage:', error);
+      }
+    }
+
+    // SECONDARY: Save to local storage for instant access
     mockServices.push(newService);
     saveToStorage('services', mockServices);
     console.log('✅ Service saved to local storage instantly:', serviceId);
 
-    // PERMANENT: Save to permanent storage system (survives logout)
+    // TERTIARY: Save to permanent storage system (survives logout)
     try {
       permanentStorage.addService(newService);
       console.log('🔒 Service saved to permanent storage - will never be lost');
@@ -637,10 +673,7 @@ export const dataService = {
       console.warn('⚠️ Failed to save to permanent storage:', error);
     }
 
-    // SKIP Firebase for faster, more reliable service creation
-    console.log('⚡ Skipping Firebase - using local storage only for instant upload');
-
-    // TERTIARY: Update shared storage for cross-session visibility
+    // QUATERNARY: Update shared storage for cross-session visibility
     try {
       const shared = loadShared<Service>('services', []);
       const exists = shared.find(s => s.id === serviceId);

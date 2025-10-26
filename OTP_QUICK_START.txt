@@ -1,0 +1,135 @@
+═══════════════════════════════════════════════════════════════════════════════
+  📱 OTP NOT WORKING - QUICK FIX
+═══════════════════════════════════════════════════════════════════════════════
+
+PROBLEM
+─────────────────────────────────────────────────────────────────────────────
+OTP shows "sent" on login page but SMS is NOT arriving on your device.
+
+ROOT CAUSE
+─────────────────────────────────────────────────────────────────────────────
+OTP Server is NOT running! You need to start it in a separate terminal.
+
+QUICK FIX (2 TERMINALS)
+─────────────────────────────────────────────────────────────────────────────
+
+TERMINAL 1 - Start OTP Server:
+  cd c:\Users\prasa\Downloads\t1\time-bank\server
+  npm install
+  node server.js
+
+  Expected output:
+  ✅ Twilio configuration loaded successfully
+  📱 Ready to send real SMS via Twilio Verify
+  Server listening on port 4000
+
+TERMINAL 2 - Start App:
+  cd c:\Users\prasa\Downloads\t1\time-bank
+  npm run dev
+
+  Expected output:
+  VITE v5.4.8 ready in XXX ms
+  ➜  Local:   http://localhost:5173/
+
+TEST OTP
+─────────────────────────────────────────────────────────────────────────────
+1. Go to http://localhost:5173
+2. Click "Phone" tab
+3. Enter phone: +91XXXXXXXXXX (replace X with your number)
+4. Click "Send OTP"
+5. ✅ SMS arrives in 10-15 seconds!
+6. Enter code and login
+
+═══════════════════════════════════════════════════════════════════════════════
+
+REQUIREMENTS
+─────────────────────────────────────────────────────────────────────────────
+✅ Twilio Account (https://www.twilio.com/console)
+✅ Verify Service created in Twilio
+✅ server/.env file with Twilio credentials:
+   TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+   TWILIO_AUTH_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+   TWILIO_SERVICE_SID=VAxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+   PORT=4000
+
+═══════════════════════════════════════════════════════════════════════════════
+
+TROUBLESHOOTING
+─────────────────────────────────────────────────────────────────────────────
+
+Q: "OTP sent" but no SMS received?
+A: Server not running. Check Terminal 1 shows "Server listening on port 4000"
+
+Q: Server shows "Twilio configuration missing"?
+A: Create server/.env with Twilio credentials
+
+Q: "Cannot find module 'twilio'"?
+A: Run: cd server && npm install
+
+Q: "Port 4000 already in use"?
+A: Kill process: taskkill /PID <PID> /F
+
+Q: Server running but still no SMS?
+A: 1. Check phone number format: +91XXXXXXXXXX
+   2. Verify Twilio credentials in server/.env
+   3. Check Twilio account has credits
+   4. Check server console for error messages
+
+═══════════════════════════════════════════════════════════════════════════════
+
+VERIFICATION CHECKLIST
+─────────────────────────────────────────────────────────────────────────────
+[ ] Twilio account created
+[ ] Verify Service created
+[ ] server/.env file exists
+[ ] TWILIO_ACCOUNT_SID set
+[ ] TWILIO_AUTH_TOKEN set
+[ ] TWILIO_SERVICE_SID set
+[ ] Server dependencies installed: cd server && npm install
+[ ] Terminal 1: node server.js (shows "Server listening on port 4000")
+[ ] Terminal 2: npm run dev (shows "Local: http://localhost:5173")
+[ ] Phone number format correct: +91XXXXXXXXXX
+[ ] SMS received on phone ✅
+
+═══════════════════════════════════════════════════════════════════════════════
+
+IMPORTANT: TWO TERMINALS REQUIRED
+─────────────────────────────────────────────────────────────────────────────
+Terminal 1: OTP Server (port 4000)
+Terminal 2: App (port 5173)
+
+Both must be running for OTP to work!
+
+═══════════════════════════════════════════════════════════════════════════════
+
+HOW IT WORKS
+─────────────────────────────────────────────────────────────────────────────
+User enters phone
+        ↓
+Clicks "Send OTP"
+        ↓
+App sends to OTP Server (localhost:4000)
+        ↓
+Server calls Twilio API
+        ↓
+Twilio sends SMS to phone ✅
+        ↓
+User receives SMS in 10-15 seconds
+        ↓
+User enters code
+        ↓
+User logged in ✅
+
+═══════════════════════════════════════════════════════════════════════════════
+
+NEXT STEPS
+─────────────────────────────────────────────────────────────────────────────
+1. Create server/.env with Twilio credentials
+2. Terminal 1: cd server && npm install && node server.js
+3. Terminal 2: npm run dev
+4. Test OTP on phone login
+5. SMS should arrive in 10-15 seconds!
+
+═══════════════════════════════════════════════════════════════════════════════
+
+For detailed guide, see: OTP_SETUP_COMPLETE.md

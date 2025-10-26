@@ -1,0 +1,235 @@
+═══════════════════════════════════════════════════════════════════════════════
+  🚀 SERVER ALWAYS RUNNING - DEPLOYMENT GUIDE
+═══════════════════════════════════════════════════════════════════════════════
+
+PROBLEM
+─────────────────────────────────────────────────────────────────────────────
+OTP sometimes doesn't come on Netlify because server is not always running.
+
+SOLUTION
+─────────────────────────────────────────────────────────────────────────────
+Deploy OTP server to Railway or Heroku so it runs 24/7.
+
+═══════════════════════════════════════════════════════════════════════════════
+
+OPTION 1: LOCAL DEVELOPMENT (KEEP SERVER RUNNING)
+─────────────────────────────────────────────────────────────────────────────
+
+Start server with auto-restart:
+  npm run server:keep-alive
+
+Features:
+  ✅ Auto-starts OTP server
+  ✅ Health checks every 30 seconds
+  ✅ Auto-restarts if server crashes
+  ✅ Logs all activity
+  ✅ Graceful shutdown with Ctrl+C
+
+═══════════════════════════════════════════════════════════════════════════════
+
+OPTION 2: RAILWAY DEPLOYMENT (RECOMMENDED)
+─────────────────────────────────────────────────────────────────────────────
+
+Step 1: Create Railway Account
+  Go to https://railway.app/
+  Sign up with GitHub
+
+Step 2: Create New Project
+  Click "New Project"
+  Select "Deploy from GitHub"
+  Select your TimeBank repo
+
+Step 3: Configure Server
+  Select `server` directory
+  Add environment variables:
+    TWILIO_ACCOUNT_SID=your_account_sid
+    TWILIO_AUTH_TOKEN=your_auth_token
+    TWILIO_SERVICE_SID=your_service_sid
+    PORT=5000
+
+Step 4: Deploy
+  Railway auto-deploys on push
+  Server runs 24/7
+
+Step 5: Get Server URL
+  Go to Railway dashboard
+  Copy your app URL (e.g., https://timebank-otp.railway.app)
+
+Step 6: Update App
+  Edit: src/services/twilioService.ts
+  Change: const API_BASE = 'https://timebank-otp.railway.app';
+  Restart app
+
+Step 7: Test
+  Go to Netlify app
+  Phone login → Send OTP
+  ✅ SMS arrives in 10-15 seconds!
+
+═══════════════════════════════════════════════════════════════════════════════
+
+OPTION 3: HEROKU DEPLOYMENT
+─────────────────────────────────────────────────────────────────────────────
+
+Step 1: Create Heroku Account
+  Go to https://www.heroku.com/
+  Sign up for free account
+
+Step 2: Install Heroku CLI
+  Download from https://devcenter.heroku.com/articles/heroku-cli
+
+Step 3: Create Heroku App
+  heroku login
+  heroku create your-app-name-otp
+
+Step 4: Add Twilio Credentials
+  heroku config:set TWILIO_ACCOUNT_SID=your_account_sid
+  heroku config:set TWILIO_AUTH_TOKEN=your_auth_token
+  heroku config:set TWILIO_SERVICE_SID=your_service_sid
+  heroku config:set PORT=5000
+
+Step 5: Deploy Server
+  cd server
+  git init
+  git add .
+  git commit -m "Deploy OTP server"
+  git push heroku main
+
+Step 6: Update App
+  Edit: src/services/twilioService.ts
+  Change: const API_BASE = 'https://your-app-name-otp.herokuapp.com';
+  Restart app
+
+Step 7: Test
+  ✅ OTP works on Netlify!
+
+═══════════════════════════════════════════════════════════════════════════════
+
+HOW IT WORKS
+─────────────────────────────────────────────────────────────────────────────
+
+LOCAL:
+  npm run server:keep-alive
+  ↓
+  Server runs locally with auto-restart
+  ↓
+  App calls localhost:4000
+  ↓
+  OTP works ✅
+
+NETLIFY + RAILWAY:
+  Deploy server to Railway
+  ↓
+  Server runs 24/7 on Railway
+  ↓
+  App calls https://your-server.railway.app
+  ↓
+  OTP always works ✅
+
+═══════════════════════════════════════════════════════════════════════════════
+
+TESTING SERVER UPTIME
+─────────────────────────────────────────────────────────────────────────────
+
+Check server status:
+  curl https://your-server-url/health
+
+Expected response:
+  {
+    "status": "ok",
+    "mode": "real",
+    "twilio": {
+      "configured": true,
+      "ready": true
+    }
+  }
+
+═══════════════════════════════════════════════════════════════════════════════
+
+TROUBLESHOOTING
+─────────────────────────────────────────────────────────────────────────────
+
+Q: OTP still not working on Netlify?
+
+A: Check 1 - Server Running?
+   curl https://your-server-url/health
+   Should return 200 OK
+
+A: Check 2 - Credentials Set?
+   Heroku: heroku config
+   Railway: Check environment variables
+   Should show all 3 Twilio credentials
+
+A: Check 3 - App Using Correct URL?
+   Check src/services/twilioService.ts
+   Should use server URL, not localhost
+   Restart app after changing
+
+A: Check 4 - Twilio Account Active?
+   Go to Twilio Console
+   Check account has credits
+   Verify Service is active
+
+═══════════════════════════════════════════════════════════════════════════════
+
+QUICK COMMANDS
+─────────────────────────────────────────────────────────────────────────────
+
+Local Development:
+  npm run server              # Start OTP server
+  npm run server:keep-alive   # Start with auto-restart
+  npm run dev                 # Start app
+
+Production:
+  Deploy to Railway/Heroku
+  Update src/services/twilioService.ts with server URL
+  Restart app
+
+═══════════════════════════════════════════════════════════════════════════════
+
+RECOMMENDED SETUP
+─────────────────────────────────────────────────────────────────────────────
+
+Development:
+  npm run server:keep-alive
+  (Keeps server running locally with auto-restart)
+
+Production (Netlify):
+  1. Deploy OTP server to Railway or Heroku
+  2. Server runs 24/7
+  3. Update app to use server URL
+  4. OTP always works! ✅
+
+═══════════════════════════════════════════════════════════════════════════════
+
+FILES REFERENCE
+─────────────────────────────────────────────────────────────────────────────
+
+server/server.js              - Main OTP server
+server/.env                   - Twilio credentials
+server-keep-alive.js          - Keep-alive monitor
+src/services/twilioService.ts - Client-side OTP service
+package.json                  - npm scripts
+
+═══════════════════════════════════════════════════════════════════════════════
+
+NEXT STEPS
+─────────────────────────────────────────────────────────────────────────────
+
+1. For Local Testing:
+   npm run server:keep-alive
+
+2. For Production:
+   - Deploy server to Railway or Heroku
+   - Update app to use server URL
+   - Test OTP on Netlify
+
+3. Verify:
+   - Check server health: curl https://your-server-url/health
+   - Test OTP: Phone login → Send OTP
+   - SMS should arrive in 10-15 seconds
+
+═══════════════════════════════════════════════════════════════════════════════
+
+Status: ✅ Server Deployment Guide Complete
+
+Next: Choose deployment option and get OTP working 24/7!

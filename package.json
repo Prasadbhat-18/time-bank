@@ -12,9 +12,11 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.app.json",
+    "server": "cd server && node server.js",
     "server:dev": "ts-node --esm server/index.ts",
     "server:start": "node dist-server/index.js",
-    "server:build": "tsc -p tsconfig.server.json"
+    "server:build": "tsc -p tsconfig.server.json",
+    "server:keep-alive": "node server-keep-alive.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.4",
