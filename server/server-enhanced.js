@@ -10,6 +10,11 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Rate limiting to prevent "Too many requests" errors
+const requestTracker = new Map(); // Track requests per phone number
+const RATE_LIMIT_WINDOW = 30000; // 30 seconds (reduced for testing)
+const MAX_REQUESTS_PER_WINDOW = 1; // Only 1 request per 30 seconds per phone number
+
 console.log('\n🚀 ========================================');
 console.log('   TWILIO OTP SERVER - STARTING');
 console.log('   ========================================\n');
@@ -30,7 +35,7 @@ const serviceSid = process.env.TWILIO_SERVICE_SID ||
 const twilioPhoneNumber = process.env.TWILIO_PHONE_NUMBER ||
                           process.env.VITE_TWILIO_PHONE_NUMBER;
 
-// Detailed logging of configuration
+// Validate credentials are properly assigned
 console.log('📋 CONFIGURATION CHECK:');
 console.log('─────────────────────────────────────────');
 console.log('Account SID:', accountSid ? `✅ ${accountSid.substring(0, 6)}...` : '❌ MISSING');
@@ -39,36 +44,50 @@ console.log('Service SID:', serviceSid ? `✅ ${serviceSid.substring(0, 6)}...` 
 console.log('Phone Number:', twilioPhoneNumber ? `✅ ${twilioPhoneNumber}` : '⚠️  OPTIONAL');
 console.log('─────────────────────────────────────────\n');
 
-// Validate critical configuration
+// Validate all credentials are properly assigned
 const isConfigured = !!(accountSid && authToken && serviceSid);
 
 if (!isConfigured) {
-    console.error('❌ CRITICAL ERROR: Twilio credentials are missing!');
+    console.error('❌ CRITICAL ERROR: Twilio credentials are NOT properly assigned!');
+    console.error('\n📋 MISSING CREDENTIALS:');
+    if (!accountSid) console.error('   ❌ TWILIO_ACCOUNT_SID is missing');
+    if (!authToken) console.error('   ❌ TWILIO_AUTH_TOKEN is missing');
+    if (!serviceSid) console.error('   ❌ TWILIO_SERVICE_SID is missing');
     console.error('\n📋 SETUP INSTRUCTIONS:');
-    console.error('1. Create server/.env file with:');
+    console.error('1. Create or update server/.env file with:');
     console.error('   TWILIO_ACCOUNT_SID=your_account_sid');
     console.error('   TWILIO_AUTH_TOKEN=your_auth_token');
     console.error('   TWILIO_SERVICE_SID=your_service_sid');
-    console.error('   TWILIO_PHONE_NUMBER=your_twilio_phone (optional)');
     console.error('\n2. Get credentials from: https://console.twilio.com/');
-    console.error('\n3. Restart the server\n');
+    console.error('   - Account SID: Console → Account → Account SID');
+    console.error('   - Auth Token: Console → Account → Auth Token');
+    console.error('   - Service SID: Console → Verify → Services → Copy SID');
+    console.error('\n3. Restart the server: npm start\n');
     
     // Still start server but with limited functionality
     console.warn('⚠️  Starting server in LIMITED MODE (OTP will not work)\n');
 } else {
-    console.log('✅ Twilio configuration VALID');
-    console.log('📱 Real SMS OTP service READY\n');
+    console.log('✅ ========================================');
+    console.log('🎉 Twilio is PROPERLY CONFIGURED');
+    console.log('✅ All credentials are assigned correctly');
+    console.log('📱 Real SMS OTP service is READY');
+    console.log('✅ ========================================\n');
 }
 
-// Initialize Twilio client (even if not configured, to avoid crashes)
+// Initialize Twilio client with proper error handling
 let client = null;
 try {
     if (accountSid && authToken) {
         client = twilio(accountSid, authToken);
-        console.log('✅ Twilio client initialized successfully\n');
+        console.log('✅ Twilio client initialized successfully');
+        console.log('   Account SID:', accountSid.substring(0, 6) + '...');
+        console.log('   Service SID:', serviceSid.substring(0, 6) + '...\n');
+    } else {
+        console.error('❌ Cannot initialize Twilio client - credentials missing');
     }
 } catch (error) {
     console.error('❌ Failed to initialize Twilio client:', error.message);
+    console.error('   Make sure credentials are valid and properly formatted\n');
 }
 
 // ============================================
@@ -96,6 +115,54 @@ app.get('/health', (req, res) => {
 });
 
 // ============================================
+// CLEAR RATE LIMIT ENDPOINT (for testing)
+// ============================================
+app.post('/api/clear-rate-limit', (req, res) => {
+    const { phoneNumber } = req.body;
+    
+    if (phoneNumber) {
+        requestTracker.delete(phoneNumber);
+        console.log(`🔄 Rate limit cleared for: ${phoneNumber}`);
+        res.json({ 
+            message: `Rate limit cleared for ${phoneNumber}`,
+            success: true 
+        });
+    } else {
+        requestTracker.clear();
+        console.log('🔄 All rate limits cleared');
+        res.json({ 
+            message: 'All rate limits cleared',
+            success: true 
+        });
+    }
+});
+
+// Rate limiting helper function
+function checkRateLimit(phoneNumber) {
+    const now = Date.now();
+    const requests = requestTracker.get(phoneNumber) || [];
+    
+    // Remove old requests outside the window
+    const recentRequests = requests.filter(timestamp => now - timestamp < RATE_LIMIT_WINDOW);
+    
+    if (recentRequests.length >= MAX_REQUESTS_PER_WINDOW) {
+        const oldestRequest = recentRequests[0];
+        const waitTime = Math.ceil((RATE_LIMIT_WINDOW - (now - oldestRequest)) / 1000);
+        return {
+            allowed: false,
+            waitTime: waitTime,
+            message: `Please wait ${waitTime} seconds before requesting another OTP`
+        };
+    }
+    
+    // Add current request
+    recentRequests.push(now);
+    requestTracker.set(phoneNumber, recentRequests);
+    
+    return { allowed: true };
+}
+
+// ============================================
 // SEND OTP ENDPOINT
 // ============================================
 app.post('/api/send-otp', async (req, res) => {
@@ -121,6 +188,18 @@ app.post('/api/send-otp', async (req, res) => {
         if (!phoneNumber.startsWith('+')) {
             return res.status(400).json({ 
                 error: 'Phone number must include country code (e.g., +919876543210)' 
+            });
+        }
+
+        // Check rate limit
+        const rateLimitCheck = checkRateLimit(phoneNumber);
+        if (!rateLimitCheck.allowed) {
+            console.warn(`⚠️  Rate limit exceeded for ${phoneNumber}: ${rateLimitCheck.message}`);
+            return res.status(429).json({ 
+                error: 'Too many requests',
+                message: rateLimitCheck.message,
+                waitTime: rateLimitCheck.waitTime,
+                success: false
             });
         }
 
@@ -161,6 +240,17 @@ app.post('/api/send-otp', async (req, res) => {
             console.error('❌ Twilio API Error:', twilioError.message);
             console.error('Code:', twilioError.code);
             console.error('─────────────────────────────────────────\n');
+            
+            // Handle specific Twilio errors
+            if (twilioError.code === 20429) {
+                return res.status(429).json({ 
+                    error: 'Too many requests to Twilio',
+                    message: 'Please wait a few minutes before trying again',
+                    details: twilioError.message,
+                    code: twilioError.code,
+                    success: false
+                });
+            }
             
             res.status(500).json({ 
                 error: 'Failed to send OTP via Twilio',

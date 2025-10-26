@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "start": "node start-all.js",
-    "start:all": "node start-all.js",
+    "start": "node start-everything.js",
+    "start:all": "node start-everything.js",
+    "start:app-only": "vite",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",

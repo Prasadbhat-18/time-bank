@@ -16,6 +16,8 @@ export const ServiceList: React.FC = () => {
   const [services, setServices] = useState<Service[]>([]);
   const [skills, setSkills] = useState<Skill[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'offer' | 'request'>('all');
   const [filterCategory, setFilterCategory] = useState<string>('');
@@ -40,13 +42,20 @@ export const ServiceList: React.FC = () => {
       console.log('🎉 New service created event received:', event.detail);
       loadData();
     };
+    const handleDeleted = (event: any) => {
+      console.log('🗑️ Service deleted event received:', event.detail);
+      setDeleting(null);
+      loadData();
+    };
     
     window.addEventListener('timebank:services:refresh', refresh);
     window.addEventListener('timebank:services:created', handleCreated);
+    window.addEventListener('timebank:services:deleted', handleDeleted);
     
     return () => {
       window.removeEventListener('timebank:services:refresh', refresh);
       window.removeEventListener('timebank:services:created', handleCreated);
+      window.removeEventListener('timebank:services:deleted', handleDeleted);
     };
   }, [filterType, filterCategory, searchTerm, hideMine, minCredits, maxCredits, sortBy, user?.id]);
 
@@ -368,17 +377,41 @@ export const ServiceList: React.FC = () => {
                       <button
                         onClick={async () => {
                           if (window.confirm('Are you sure you want to delete this service?')) {
+                            setDeleting(service.id);
+                            setDeleteError(null);
                             try {
+                              console.log('🗑️ Deleting service:', service.id);
                               await dataService.deleteService(service.id, user.id);
-                              loadData();
+                              console.log('✅ Service deleted successfully');
+                              // Reload data after successful deletion
+                              await new Promise(resolve => setTimeout(resolve, 500));
+                              await loadData();
+                              setDeleting(null);
                             } catch (error: any) {
-                              alert('Failed to delete service: ' + (error.message || 'Unknown error'));
+                              console.error('❌ Failed to delete service:', error);
+                              const errorMsg = error.message || 'Unknown error';
+                              setDeleteError(errorMsg);
+                              setDeleting(null);
+                              alert('Failed to delete service: ' + errorMsg);
                             }
                           }
                         }}
-                        className="px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-sm rounded transition flex items-center gap-1"
+                        disabled={deleting === service.id}
+                        className={`px-3 py-1.5 text-white text-sm rounded transition flex items-center gap-1 ${
+                          deleting === service.id
+                            ? 'bg-red-400 cursor-not-allowed opacity-50'
+                            : 'bg-red-500 hover:bg-red-600'
+                        }`}
                       >
-                        <span>×</span> Cancel
+                        {deleting === service.id ? (
+                          <>
+                            <span className="animate-spin">⏳</span> Deleting...
+                          </>
+                        ) : (
+                          <>
+                            <span>×</span> Cancel
+                          </>
+                        )}
                       </button>
                     )}
                   </div>

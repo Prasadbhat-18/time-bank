@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OTP Test - Real Twilio SMS</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            max-width: 500px;
+            width: 100%;
+            padding: 40px;
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            color: #333;
+            font-weight: 600;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        
+        input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 5px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        button {
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            font-size: 14px;
+            display: none;
+        }
+        
+        .status.show {
+            display: block;
+        }
+        
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .status.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        
+        .logs {
+            margin-top: 30px;
+            padding: 15px;
+            background: #f5f5f5;
+            border-radius: 5px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-size: 12px;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .log-entry {
+            margin-bottom: 8px;
+            padding: 5px;
+            border-left: 3px solid #667eea;
+            padding-left: 10px;
+        }
+        
+        .log-entry.error {
+            border-left-color: #dc3545;
+            color: #dc3545;
+        }
+        
+        .log-entry.success {
+            border-left-color: #28a745;
+            color: #28a745;
+        }
+        
+        .log-entry.info {
+            border-left-color: #17a2b8;
+            color: #17a2b8;
+        }
+        
+        .timer {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #666;
+        }
+        
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📱 OTP Test</h1>
+        <p class="subtitle">Real Twilio SMS Delivery Test</p>
+        
+        <div id="step1">
+            <div class="form-group">
+                <label for="phone">Phone Number (with country code)</label>
+                <input 
+                    type="tel" 
+                    id="phone" 
+                    placeholder="+916363423817"
+                    value="+91"
+                >
+            </div>
+            <button onclick="sendOTP()">📤 Send OTP</button>
+        </div>
+        
+        <div id="step2" class="hidden">
+            <div class="form-group">
+                <label for="otp">Enter OTP Code</label>
+                <input 
+                    type="text" 
+                    id="otp" 
+                    placeholder="123456"
+                    maxlength="6"
+                >
+            </div>
+            <button onclick="verifyOTP()">✅ Verify OTP</button>
+            <button onclick="resetTest()" style="background: #6c757d; margin-top: 10px;">🔄 Start Over</button>
+        </div>
+        
+        <div id="status" class="status"></div>
+        
+        <div class="logs">
+            <div style="font-weight: bold; margin-bottom: 10px;">📋 Logs:</div>
+            <div id="logContainer"></div>
+        </div>
+    </div>
+
+    <script>
+        let phoneNumber = '';
+        
+        function log(message, type = 'info') {
+            const logContainer = document.getElementById('logContainer');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logContainer.appendChild(entry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+            console.log(`[${type.toUpperCase()}]`, message);
+        }
+        
+        function showStatus(message, type = 'info') {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = `status show ${type}`;
+        }
+        
+        async function sendOTP() {
+            const phoneInput = document.getElementById('phone').value.trim();
+            
+            if (!phoneInput) {
+                showStatus('❌ Please enter a phone number', 'error');
+                return;
+            }
+            
+            if (!phoneInput.startsWith('+')) {
+                showStatus('❌ Phone number must start with + (country code)', 'error');
+                return;
+            }
+            
+            phoneNumber = phoneInput;
+            
+            try {
+                log('🚀 Starting OTP send process...', 'info');
+                log(`📱 Target phone: ${phoneNumber}`, 'info');
+                
+                // Check server health first
+                log('🔍 Checking server health...', 'info');
+                const healthResponse = await fetch('http://localhost:4000/health', {
+                    method: 'GET',
+                    headers: { 'Accept': 'application/json' }
+                });
+                
+                if (!healthResponse.ok) {
+                    throw new Error(`Server not responding (HTTP ${healthResponse.status})`);
+                }
+                
+                const healthData = await healthResponse.json();
+                log('✅ Server is healthy', 'success');
+                log(`📊 Twilio configured: ${healthData.twilio.configured}`, 'info');
+                
+                // Send OTP
+                log('📤 Sending OTP via Twilio...', 'info');
+                const response = await fetch('http://localhost:4000/api/send-otp', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({ phoneNumber: phoneNumber })
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    log(`❌ Error: ${data.error}`, 'error');
+                    log(`Details: ${data.details}`, 'error');
+                    showStatus(`❌ ${data.error}: ${data.details}`, 'error');
+                    return;
+                }
+                
+                log('✅ OTP sent successfully!', 'success');
+                log(`📨 Message: ${data.message}`, 'success');
+                log(`🆔 Verification SID: ${data.sid}`, 'info');
+                log(`⏱️ Response time: ${data.responseTime}ms`, 'info');
+                
+                showStatus(`✅ OTP sent to ${phoneNumber}! Check your phone for the code.`, 'success');
+                
+                // Switch to verification step
+                document.getElementById('step1').classList.add('hidden');
+                document.getElementById('step2').classList.remove('hidden');
+                document.getElementById('otp').focus();
+                
+                log('⏳ Waiting for user to enter OTP...', 'info');
+                
+            } catch (error) {
+                log(`❌ Error: ${error.message}`, 'error');
+                showStatus(`❌ ${error.message}`, 'error');
+            }
+        }
+        
+        async function verifyOTP() {
+            const otpCode = document.getElementById('otp').value.trim();
+            
+            if (!otpCode) {
+                showStatus('❌ Please enter the OTP code', 'error');
+                return;
+            }
+            
+            if (otpCode.length !== 6) {
+                showStatus('❌ OTP must be 6 digits', 'error');
+                return;
+            }
+            
+            try {
+                log('🔐 Verifying OTP...', 'info');
+                log(`📱 Phone: ${phoneNumber}`, 'info');
+                log(`🔑 OTP Code: ${otpCode}`, 'info');
+                
+                const response = await fetch('http://localhost:4000/api/verify-otp', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({ 
+                        phoneNumber: phoneNumber,
+                        otp: otpCode
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    log(`❌ Verification failed: ${data.error}`, 'error');
+                    showStatus(`❌ ${data.error}`, 'error');
+                    return;
+                }
+                
+                log('✅ OTP verified successfully!', 'success');
+                log(`📊 Status: ${data.status}`, 'success');
+                
+                showStatus('🎉 OTP verified successfully! Real SMS delivery is working!', 'success');
+                
+            } catch (error) {
+                log(`❌ Error: ${error.message}`, 'error');
+                showStatus(`❌ ${error.message}`, 'error');
+            }
+        }
+        
+        function resetTest() {
+            document.getElementById('step1').classList.remove('hidden');
+            document.getElementById('step2').classList.add('hidden');
+            document.getElementById('phone').value = '+91';
+            document.getElementById('otp').value = '';
+            document.getElementById('status').classList.remove('show');
+            phoneNumber = '';
+            log('🔄 Test reset', 'info');
+        }
+        
+        // Initialize
+        window.addEventListener('load', () => {
+            log('✅ OTP Test Page Loaded', 'success');
+            log('🔍 Ready to test real SMS delivery', 'info');
+        });
+    </script>
+</body>
+</html>

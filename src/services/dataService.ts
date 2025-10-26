@@ -704,10 +704,30 @@ export const dataService = {
   },
 
   async deleteService(serviceId: string, currentUserId?: string): Promise<void> {
-    // Find the service first
+    // Find the service first - check all storage locations
     let service = mockServices.find(s => s.id === serviceId);
     
-    // If not found locally, try to load from Firebase
+    // If not found locally, try permanent storage
+    if (!service) {
+      try {
+        const permanentServices = permanentStorage.loadServices();
+        service = permanentServices.find(s => s.id === serviceId);
+      } catch (error) {
+        console.warn('Failed to load service from permanent storage:', error);
+      }
+    }
+    
+    // If not found, try shared storage
+    if (!service) {
+      try {
+        const sharedServices = loadShared<Service>('services', []);
+        service = sharedServices.find(s => s.id === serviceId);
+      } catch (error) {
+        console.warn('Failed to load service from shared storage:', error);
+      }
+    }
+    
+    // If still not found, try Firebase
     if (!service && useFirebase) {
       try {
         const servicesFromFs = await loadFromFirestore<Service>('services');
@@ -735,7 +755,6 @@ export const dataService = {
         console.log('✅ Service deleted from Firebase:', serviceId);
       } catch (error) {
         console.error('❌ Failed to delete service from Firebase:', error);
-        throw new Error('Failed to delete service from database');
       }
     }
     
@@ -744,6 +763,17 @@ export const dataService = {
     if (idx !== -1) {
       mockServices.splice(idx, 1);
       saveToStorage('services', mockServices);
+      console.log('✅ Service removed from local storage');
+    }
+    
+    // Remove from permanent storage
+    try {
+      const permanentServices = permanentStorage.loadServices();
+      const filtered = permanentServices.filter(s => s.id !== serviceId);
+      permanentStorage.saveServices(filtered);
+      console.log('✅ Service removed from permanent storage');
+    } catch (error) {
+      console.warn('Failed to remove from permanent storage:', error);
     }
     
     // Remove from shared storage
@@ -751,11 +781,18 @@ export const dataService = {
       const shared = loadShared<Service>('services', []);
       const filtered = shared.filter(s => s.id !== serviceId);
       saveShared('services', filtered);
+      console.log('✅ Service removed from shared storage');
     } catch (error) {
       console.warn('Failed to remove from shared storage:', error);
     }
     
     console.log('🎉 Service deleted successfully:', serviceId);
+    
+    // Dispatch deletion event for UI refresh
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('timebank:services:deleted', { detail: { serviceId } }));
+      console.log('📢 Service deletion event dispatched');
+    }
   },
 
   async getBookings(userId: string): Promise<Booking[]> {

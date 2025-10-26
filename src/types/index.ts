@@ -72,6 +72,8 @@ export interface Service {
   type: 'offer' | 'request';
   created_at: string;
   imageUrls?: string[];
+  is_demo?: boolean; // Mark as demo/auto-generated service
+  is_auto_generated?: boolean; // Mark as auto-generated
 }
 
 export interface Booking {

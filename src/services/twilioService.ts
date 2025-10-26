@@ -183,6 +183,13 @@ export const twilioService = {
                     statusText: response.statusText,
                     data: data
                 });
+                
+                // Handle rate limiting (429 error)
+                if (response.status === 429) {
+                    const waitTime = data.waitTime || 60;
+                    throw new Error(`⏳ Please wait ${waitTime} seconds before requesting another OTP. ${data.message || ''}`);
+                }
+                
                 throw new Error(data.error || `Server error (${response.status}): ${data.details || 'Failed to send real SMS OTP'}`);
             }
             
